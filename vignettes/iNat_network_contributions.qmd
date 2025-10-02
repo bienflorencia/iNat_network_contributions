@@ -1,0 +1,1050 @@
+---
+title: 'Contributions from iNaturalist national sites'
+subtitle: 'Data analyses'
+format: 
+  html:
+    toc: true
+    toc-location: right
+    smooth-scroll: true
+    html-math-method: katex
+    code-fold: true
+    fig-dpi: 100
+self-contained: true
+editor: source
+author: 'Florencia Grattarola'
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+editor_options: 
+  chunk_output_type: console
+---
+
+The [iNaturalist Network](https://www.naturalista.uy/sites/network) is a localised experience that is fully connected to the global iNaturalist community. Network members are local institutions that promote local use and facilitate the use of data from iNaturalist to benefit local 
+
+The aim of this report is to give an account of the importance of the iNaturalist network members by analysing the number of records for each country.
+
+```{r}
+#| label: libraries
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+
+library(httr)
+library(jsonlite)
+library(knitr)
+library(rgbif)
+library(ggrepel)
+library(extrafont)
+library(patchwork)
+library(parallel)
+library(doParallel)
+library(hstats)
+library(vip)
+library(future)
+library(tidymodels)
+library(tidyverse)  
+
+options(knitr.kable.NA = '') 
+options(scipen=999)
+```
+
+## iNaturalist National Sites
+
+```{r}
+#| label: inat-sites
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| tbl-cap: 'Members of the iNaturalist Network. Shown in green are the sites from Latin America'
+
+iNat_network <- 
+  tribble(~'site', ~'site_name', ~'site_id',
+        'Global', 'iNaturalist', 1,
+        'Mexico', 'iNaturalistMX', 2,
+        'New Zealand', 'iNaturalistNZ', 3,
+        'Canada', 'iNaturalist.ca', 5,
+        'Colombia', 'NaturalistaCO', 6,
+        'Portugal', 'BioDiversity4All', 8,
+        'Australia', 'iNaturalistAU', 9,
+        'Panama', 'iNaturalistPa', 13,
+        'Ecuador', 'iNaturalistEc', 14,
+        'Israel', 'iNaturalistil', 15,
+        'Argentina', 'ArgentiNat', 16,
+        'Costa Rica', 'NaturalistaCR', 17,
+        'Chile', 'iNaturalistCL', 18,
+        'Finland', 'iNaturalistFi', 20,
+        'Sweeden', 'iNaturalist.Se', 21,
+        'Spain', 'Natusfera', 22,
+        'Greece', 'iNaturalistGR', 23,
+        'Guatemala', 'iNaturalistGT', 24,
+        'United Kingdom', 'iNaturalistUK', 25,
+        'Luxembourg', 'iNaturalist.LU', 26,
+        'Taiwan', 'iNaturalistTW', 27,
+        'Uruguay', 'NaturalistaUY', 28)
+
+iNat_network %>% 
+  mutate('#'= row_number()) %>% relocate('#') %>% 
+  rename(`Site` = site,
+         `Name`=site_name,
+         `ID`=site_id) %>% 
+  kableExtra::kbl(digits=1, format.args = list(big.mark = ',')) %>% 
+  kableExtra::kable_material('striped') %>% 
+  kableExtra::row_spec(row = c(2,5,8,9,11,12,13,18,22), bold = T, color = "white", background = "#228A22")
+```
+
+## Methods
+
+We tested different explanatory variables and saw which is the model that best explains the values a country has for iNaturalist. Indicators per country were extracted using the WDI: World Development Indicators (World Bank) on the **26th of September, 2025**. 
+
+**Response variables**:  
+
+  - total number of records on iNaturalist per country: `n_records_inat`.  
+  - proportion of records from iNaturalist on GBIF per country (proxy for quality, research- grade records):  `p_gbif`.  
+  - number of users recording in the country (this is not exactly the users from the country, but users that have generated records in the country): `n_users`.  
+  - number of taxa recorded in the country (this is not necessarily at the species level): `n_taxa`.
+
+
+**Explanatory variables**:  
+
+  - population of the country: `population` (*SP.POP.TOTL*).  
+  - area of the country in km^2^: `area` (*AG.SRF.TOTL.K2*).  
+  - country's centroid latitude (as a proxy of expected biodiversity): `latitude` (using `rnaturalearth` country polygons).  
+  - GDP per capita: `gdp_per_capita` (*NY.GDP.PCAP.CD*).  
+  - % of the GDP of the country dedicated to research: `gdp_in_research` *GB.XPD.RSDV.GD.ZS*).  
+
+### Data extraction
+
+**Functions**
+
+```{r}
+#| label: functions
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+source('R/variables_per_country.R')
+```
+
+**Data download**
+
+```{r}
+#| label: variables
+#| echo: true
+#| eval: false
+#| message: false
+#| warning: false
+
+UnitedStates <- tibble(country_name= 'United States')
+
+UnitedStates <- UnitedStates %>% 
+  mutate(country_code = countrycode::countrycode(country_name,
+                                                 origin = 'country.name',
+                                                 destination = 'iso2c'))
+
+n_inat_gbif_country <- getGBIFrecordsPerCountry(UnitedStates$country_code)
+n_inat_country <- getiNatRecordsPerCountry(UnitedStates$country_name)
+n_users_country <- getiNatUsersPerCountry(UnitedStates$country_name)
+n_taxa_country <- getiNatTaxaPerCountry(UnitedStates$country_name)
+
+area_country <- getAreaPerCountry(UnitedStates$country_code)
+population <- getPopulationPerCountry(UnitedStates$country_code)
+gdp_per_capita <- getGDPperCapitaPerCountry(UnitedStates$country_code)
+gdp_in_research <- getGDPinResearchPerCountry(UnitedStates$country_code)
+latitude <- getLatitudePerCountry(UnitedStates$country_code)
+
+data_variables_UnitedStates <- left_join(left_join(left_join(left_join(
+  left_join(left_join(left_join(left_join(left_join(
+  UnitedStates, n_inat_gbif_country),
+  n_inat_country), 
+  n_users_country),
+  n_taxa_country),
+  area_country), 
+  population), 
+  gdp_per_capita), 
+  gdp_in_research), latitude)
+
+saveRDS(data_variables_UnitedStates, 'data/UnitedStates_data_variables.rds')
+
+########################################################################
+
+America <- tibble(country_name= c('Canada', 'Mexico', 'Brazil', 'Costa Rica', 'Colombia', 'Peru', 'Argentina', 'Ecuador', 'Panama', 'Chile', 'Venezuela', 'Belize', 'Honduras', 'Bolivia', 'Guatemala', 'Cuba', 'Nicaragua', 'Paraguay', 'Bahamas', 'Jamaica', 'Trinidad and Tobago', 'Guyana', 'Dominican Republic', 'El Salvador', 'Suriname', 'Uruguay', 'Haiti'))
+
+America <- America %>% 
+  mutate(country_code = countrycode::countrycode(country_name,
+                                                 origin = 'country.name',
+                                                 destination = 'iso2c'))
+
+America <- left_join(America, iNat_network %>% rename(country_name=site))
+
+n_inat_gbif_country <- getGBIFrecordsPerCountry(America$country_code)
+n_inat_country <- getiNatRecordsPerCountry(America$country_name)
+n_users_country <- getiNatUsersPerCountry(America$country_name)
+n_taxa_country <- getiNatTaxaPerCountry(America$country_name)
+
+area_country <- getAreaPerCountry(America$country_code)
+population <- getPopulationPerCountry(America$country_code)
+gdp_per_capita <- getGDPperCapitaPerCountry(America$country_code)
+gdp_in_research <- getGDPinResearchPerCountry(America$country_code)
+latitude <- getLatitudePerCountry(America$country_code)
+
+data_variables_America <- left_join(left_join(left_join(left_join(
+  left_join(left_join(left_join(left_join(left_join(
+  America, n_inat_gbif_country),
+  n_inat_country), 
+  n_users_country),
+  n_taxa_country),
+  area_country), 
+  population), 
+  gdp_per_capita), 
+  gdp_in_research), latitude)
+
+saveRDS(data_variables_America, 'data/America_data_variables.rds')
+
+########################################################################
+
+Europe <- tibble(country_name = c('Austria', 'Belgium', 'Bulgaria', 'Croatia', 'Cyprus', 'Czechia', 'Denmark', 'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary', 'Ireland', 'Italy', 'Latvia', 'Lithuania', 'Luxembourg', 'Malta', 'Netherlands', 'Poland', 'Portugal', 'Romania', 'Slovakia', 'Slovenia', 'Spain', 'Sweden', 'United Kingdom', 'Iceland', 'Liechtenstein', 'Norway', 'Switzerland', 'Albania', 'Bosnia and Herzegovina', 'Georgia', 'Moldova', 'Montenegro', 'Macedonia', 'Serbia', 'Turkey', 'Ukraine'))
+
+Europe <- Europe %>% 
+  mutate(country_code = countrycode::countrycode(country_name,
+                                                 origin = 'country.name',
+                                                 destination = 'iso2c'))
+
+Europe <- left_join(Europe, iNat_network %>% rename(country_name=site))
+
+n_inat_gbif_country <- getGBIFrecordsPerCountry(Europe$country_code)
+n_inat_country <- getiNatRecordsPerCountry(Europe$country_name)
+n_users_country <- getiNatUsersPerCountry(Europe$country_name)
+n_taxa_country <- getiNatTaxaPerCountry(Europe$country_name)
+
+area_country <- getAreaPerCountry(Europe$country_code)
+population <- getPopulationPerCountry(Europe$country_code)
+gdp_per_capita <- getGDPperCapitaPerCountry(Europe$country_code)
+gdp_in_research <- getGDPinResearchPerCountry(Europe$country_code)
+latitude <- getLatitudePerCountry(Europe$country_code)
+
+data_variables_Europe <- left_join(left_join(left_join(left_join(
+  left_join(left_join(left_join(left_join(left_join(
+  Europe, n_inat_gbif_country),
+  n_inat_country), 
+  n_users_country),
+  n_taxa_country),
+  area_country), 
+  population), 
+  gdp_per_capita), 
+  gdp_in_research), latitude)
+
+saveRDS(data_variables_Europe, 'data/Europe_data_variables.rds')
+
+########################################################################
+
+Asia <- tibble(country_name = c('India', 'China', 'Indonesia', 'Pakistan', 'Bangladesh', 'Japan', 'Philippines', 'Vietnam', 'Iran', 'Turkey', 'Thailand', 'Myanmar', 'South Korea','Iraq', 'Afghanistan', 'Yemen', 'Uzbekistan', 'Malaysia', 'Saudi Arabia', 'Nepal', 'North Korea','Syria', 'Sri Lanka','Kazakhstan', 'Cambodia', 'Jordan', 'United Arab Emirates', 'Tajikistan', 'Azerbaijan', 'Israel', 'Laos', 'Turkmenistan', 'Kyrgyzstan', 'Singapore', 'Lebanon', 'Palestine','Oman', 'Kuwait', 'Georgia', 'Mongolia', 'Qatar', 'Armenia', 'Bahrain', 'Timor Leste', 'Cyprus', 'Bhutan', 'Maldives', 'Brunei', 'Taiwan'))
+
+Asia <- Asia %>% 
+  mutate(country_code = countrycode::countrycode(country_name,
+                                                 origin = 'country.name',
+                                                 destination = 'iso2c'))
+
+Asia <- left_join(Asia, iNat_network %>% rename(country_name=site))
+
+n_inat_gbif_country <- getGBIFrecordsPerCountry(Asia$country_code)
+n_inat_country <- getiNatRecordsPerCountry(Asia$country_name)
+n_users_country <- getiNatUsersPerCountry(Asia$country_name)
+n_taxa_country <- getiNatTaxaPerCountry(Asia$country_name)
+
+area_country <- getAreaPerCountry(Asia$country_code)
+population <- getPopulationPerCountry(Asia$country_code)
+gdp_per_capita <- getGDPperCapitaPerCountry(Asia$country_code)
+gdp_in_research <- getGDPinResearchPerCountry(Asia$country_code)
+latitude <- getLatitudePerCountry(Asia$country_code)
+
+data_variables_Asia <- left_join(left_join(left_join(left_join(
+  left_join(left_join(left_join(left_join(left_join(
+  Asia, n_inat_gbif_country),
+  n_inat_country), 
+  n_users_country),
+  n_taxa_country),
+  area_country), 
+  population), 
+  gdp_per_capita), 
+  gdp_in_research), latitude)
+
+data_variables_Asia <- data_variables_Asia %>% 
+  mutate(area = ifelse(country_name == 'Taiwan', 36197, area),
+         population = ifelse(country_name == 'Taiwan', 23365274, population))
+
+saveRDS(data_variables_Asia, 'data/Asia_data_variables.rds')
+
+########################################################################
+
+Oceania <- tibble(country_name = c('Australia', 'Papua New Guinea', 'New Zealand', 'Fiji', 'Solomon Islands', 'Federated States of Micronesia', 'Vanuatu', 'Samoa', 'Kiribati', 'Tonga', 'Marshall Islands', 'Palau', 'Tuvalu', 'Nauru'))
+
+Oceania <- Oceania %>% 
+  mutate(country_code = countrycode::countrycode(country_name,
+                                                 origin = 'country.name',
+                                                 destination = 'iso2c'))
+
+Oceania <- left_join(Oceania, iNat_network %>% rename(country_name=site))
+
+n_inat_gbif_country <- getGBIFrecordsPerCountry(Oceania$country_code)
+n_inat_country <- getiNatRecordsPerCountry(Oceania$country_name)
+n_users_country <- getiNatUsersPerCountry(Oceania$country_name)
+n_taxa_country <- getiNatTaxaPerCountry(Oceania$country_name)
+
+area_country <- getAreaPerCountry(Oceania$country_code)
+population <- getPopulationPerCountry(Oceania$country_code)
+gdp_per_capita <- getGDPperCapitaPerCountry(Oceania$country_code)
+gdp_in_research <- getGDPinResearchPerCountry(Oceania$country_code)
+latitude <- getLatitudePerCountry(Oceania$country_code)
+
+data_variables_Oceania <- left_join(left_join(left_join(left_join(
+  left_join(left_join(left_join(left_join(left_join(
+  Oceania, n_inat_gbif_country),
+  n_inat_country), 
+  n_users_country),
+  n_taxa_country),
+  area_country), 
+  population), 
+  gdp_per_capita), 
+  gdp_in_research), latitude)
+
+saveRDS(data_variables_Oceania, 'data/Oceania_data_variables.rds')
+
+########################################################################
+
+variables_global <- bind_rows(data_variables_UnitedStates %>% 
+                                mutate(continent = 'America'),
+                              data_variables_America %>% 
+                                mutate(continent = 'America'),
+                              data_variables_Europe %>% 
+                                mutate(continent = 'Europe'),
+                              data_variables_Asia %>% 
+                                mutate(continent = 'Asia'),
+                              data_variables_Oceania %>% 
+                                mutate(continent = 'Oceania')) %>% 
+  unique()
+
+# variables_global <- bind_rows(readRDS('data/UnitedStates_data_variables.rds') %>%
+#                                 mutate(continent = 'America'),
+#   readRDS('data/America_data_variables.rds') %>%
+#                                 mutate(continent = 'America'),
+#           readRDS('data/Europe_data_variables.rds') %>%
+#                                 mutate(continent = 'Europe'),
+#           readRDS('data/Asia_data_variables.rds') %>%
+#                                 mutate(continent = 'Asia'),
+#           readRDS('data/Oceania_data_variables.rds') %>%
+#                                 mutate(continent = 'Oceania'))  %>%
+#   unique()
+
+saveRDS(variables_global, 'data/Global_data_variables.rds')
+```
+
+```{r}
+#| label: read-variables
+#| echo: false
+#| eval: true
+#| message: false
+#| warning: false
+
+data_variables <- readRDS('data/Global_data_variables.rds')
+```
+
+## Summary of the data
+
+```{r}
+#| label: summary-data
+#| echo: false
+#| eval: false
+#| message: false
+#| warning: false
+
+bind_rows(
+  data_variables %>% filter(!is.na(site_name)) %>% 
+    select(continent, country_name, site_name, 
+           n_records_inat, n_records_gbif_inat, n_users, n_taxa) %>% 
+  summarise(n_records_inat = sum(n_records_inat),
+            n_records_gbif_inat = sum(n_records_gbif_inat),
+            p_gbif = n_records_gbif_inat*100/n_records_inat,
+            n_users = sum(n_users),
+            n_taxa = sum(n_taxa)) %>% 
+    mutate(Region = 'Network') %>% 
+    relocate(Region) %>% select(-n_records_gbif_inat),
+  data_variables %>% filter(is.na(site_name) & country_code != 'US') %>% 
+    select(continent, country_name, site_name, 
+           n_records_inat, n_records_gbif_inat, n_users, n_taxa) %>% 
+  summarise(n_records_inat = sum(n_records_inat, na.rm=T),
+            n_records_gbif_inat = sum(n_records_gbif_inat, na.rm=T),
+            p_gbif = n_records_gbif_inat*100/n_records_inat,
+            n_users = sum(n_users, na.rm=T),
+            n_taxa = sum(n_taxa, na.rm=T)) %>% 
+  mutate(Region = 'Rest of the world') %>% 
+  relocate(Region) %>% select(-n_records_gbif_inat), 
+  data_variables %>% filter(country_name == 'United States') %>% 
+    select(continent, country_name, site_name, 
+           n_records_inat, n_records_gbif_inat, n_users, n_taxa) %>% 
+  summarise(n_records_inat = sum(n_records_inat, na.rm=T),
+            n_records_gbif_inat = sum(n_records_gbif_inat),
+            p_gbif = n_records_gbif_inat*100/n_records_inat,
+            n_users = sum(n_users, na.rm=T),
+            n_taxa = sum(n_taxa, na.rm=T)) %>% 
+  mutate(Region = 'United States') %>% 
+  relocate(Region) %>% select(-n_records_gbif_inat)
+) %>% rename(`Records on iNat`= n_records_inat,
+             `% on GBIF` = p_gbif,
+             `Users`= n_users, `Taxa`= n_taxa) %>% 
+  kableExtra::kbl(digits=1, format.args = list(big.mark = ',')) %>% 
+  kableExtra::kable_material('striped') 
+```
+
+## Summary of the data for the Network members
+
+```{r}
+#| label: site-variables
+#| echo: false
+#| eval: false
+#| message: false
+#| warning: false
+
+data_variables %>% filter(!is.na(site_name)) %>% 
+  select(continent, country_name, site_name, 
+         n_records_inat, n_records_gbif_inat, n_users) %>% 
+  arrange(continent, country_name,
+          n_records_inat,n_records_gbif_inat,n_users) %>% 
+  rename(Continent = continent, Country=country_name,
+         Site=site_name, 
+         `Records on iNat`=n_records_inat,
+         `Records from iNat on GBIF` = n_records_gbif_inat,
+         `Users recording on iNat`= n_users) %>% 
+  kableExtra::kbl(digits=1, format.args = list(big.mark = ',')) %>% 
+  kableExtra::kable_material('striped') 
+```
+
+### Total number of records on iNaturalist per country
+
+```{r}
+#| label: n_inat_country
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+ids <- data_variables %>% 
+  select(country_name,site_name, n_records_inat) %>% 
+  arrange(desc(n_records_inat)) %>% 
+  with(which(!is.na(site_name)))
+
+data_variables %>% 
+  select(country_name,site_name, n_records_inat) %>% 
+  arrange(desc(n_records_inat)) %>% 
+  mutate('#'= row_number()) %>% relocate('#') %>% 
+  rename(`Country` = country_name,
+         `iNat site` = site_name,
+         `Records on iNat`=n_records_inat) %>% 
+  kableExtra::kbl(digits=4, format.args = list(big.mark = ',')) %>% 
+  kableExtra::kable_material('striped') %>% 
+  kableExtra::row_spec(ids, bold = T, color = "white", background = "#228A22") %>% 
+  kableExtra::scroll_box(height = '600px')
+```
+
+### Number of records from iNaturalist on GBIF per country
+
+```{r}
+#| label: n_inat_gbif_country
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+ids <- data_variables %>% 
+  select(country_name, site_name, n_records_gbif, n_records_gbif_inat) %>% 
+  mutate(p_gbif=n_records_gbif_inat*100/n_records_gbif) %>% 
+  arrange(desc(p_gbif)) %>% 
+  with(which(!is.na(site_name)))
+
+data_variables %>% 
+  select(country_name, site_name, n_records_gbif, n_records_gbif_inat) %>% 
+  mutate(p_gbif=n_records_gbif_inat*100/n_records_gbif) %>% 
+  arrange(desc(p_gbif)) %>% 
+  mutate('#'= row_number()) %>% relocate('#') %>% 
+  select(-n_records_gbif_inat) %>% 
+  rename(`Country` = country_name,
+         `iNat site` = site_name,
+         `Records from iNat on GBIF`=n_records_gbif,
+         `Proportion`=p_gbif) %>% 
+  kableExtra::kbl(digits=4, format.args = list(big.mark = ',')) %>% 
+  kableExtra::kable_material('striped') %>% 
+  kableExtra::row_spec(ids, bold = T, color = "white", background = "#228A22") %>% 
+  kableExtra::scroll_box(height = '600px')
+```
+
+### Number of users recording in the country
+
+```{r}
+#| label: n_users
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+ids <- data_variables %>% 
+  select(country_name, site_name, n_users) %>% 
+  arrange(desc(n_users)) %>% 
+  with(which(!is.na(site_name)))
+
+data_variables %>% 
+  select(country_name, site_name, n_users) %>% 
+  arrange(desc(n_users)) %>%
+  mutate('#'= row_number()) %>% relocate('#') %>% 
+  rename(`Country` = country_name,
+         `iNat site` = site_name,
+         `Users recording on iNat`=n_users) %>% 
+  kableExtra::kbl(digits=4, format.args = list(big.mark = ',')) %>% 
+  kableExtra::kable_material('striped') %>% 
+  kableExtra::row_spec(ids, bold = T, color = "white", background = "#228A22") %>% 
+  kableExtra::scroll_box(height = '600px')
+```
+
+
+## Associations between variables
+
+### Population of the country
+
+```{r}
+#| label: population-plot
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| fig-cap: 
+#| - 'Number of records on iNaturalist vs Population of the country'
+#| - 'Number of iNat records on GBIF vs Population of the country'
+#| - 'Number of users recording on iNaturalist vs Population of the country'
+#| - 'Number of taxa recorded on iNaturalist vs Population of the country'
+
+## records
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(population/100000, n_records_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Population of the country (hundred thousand)',
+       y='Number of records on iNaturalist (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## records in GBIF
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(population/100000, n_records_gbif_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Population of the country (hundred thousand)',
+       y='Number of iNat records on GBIF (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## users
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(population/100000, n_users, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', col= 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Population of the country (hundred thousand)',
+       y='Number of users recording on iNaturalist') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+```
+
+### Area of the country in km^2^
+
+```{r}
+#| label: area_country-plot
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| fig-cap: 
+#| - 'Number of records on iNaturalist vs Area of the country'
+#| - 'Number of iNat records on GBIF vs Area of the country'
+#| - 'Number of users recording on iNaturalist vs Area of the country'
+#| - 'Number of taxa recorded on iNaturalist vs Area of the country'
+
+## records
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(area/1000,n_records_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Area of the country (thousand km2)',
+       y='Number of records on iNaturalist (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## records in gbif
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(area/1000, n_records_gbif_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Area of the country (thousand km2)',
+       y='Number of iNat records on GBIF (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## users
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(area/1000, n_users, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Area of the country (thousand km2)',
+       y='Number of users recording on iNaturalist') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+```
+
+### Country's centroid latitude
+
+```{r}
+#| label: latitude
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| fig-cap: 
+#| - "Number of records on iNaturalist vs country's centroid latitude"
+#| - "Number of iNat records on GBIF vs country's centroid latitude"
+#| - "Number of users recording on iNaturalist vs country's centroid latitude"
+#| - "Number of taxa recorded on iNaturalist vs country's centroid latitude"
+
+## records
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(abs(latitude), n_records_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Absolute decimal latitude of the country\'s centroid',
+       y='Number of records on iNaturalist (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## records in gbif
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(abs(latitude), n_records_gbif_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Absolute decimal latitude of the country\'s centroid',
+       y='Number of iNat records on GBIF (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## users
+ggplot(data_variables %>% 
+         mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(abs(latitude), n_users, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='Absolute decimal latitude of the country\'s centroid',
+       y='Number of users recording on iNaturalist') +
+  #scale_x_log10() + 
+  scale_y_log10() +
+  theme_bw()
+```
+
+### GDP per capita
+
+```{r}
+#| label: gdp_country
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| fig-cap: 
+#| - "Number of records on iNaturalist vs country's GDP per capita"
+#| - "Number of iNat records on GBIF vs country's GDP per capita"
+#| - "Number of users recording on iNaturalist vs GDP per capita"
+#| - "Number of taxa recorded on iNaturalist vs GDP per capita"
+
+## records
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(gdp_per_capita/1000, n_records_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='GDP per capita (thousand USD)',
+       y='Number of records on iNaturalist (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+
+## records in gbif
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(gdp_per_capita/1000, n_records_gbif_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='GDP per capita (thousand USD)',
+       y='Number of iNat records on GBIF (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## users
+ggplot(data_variables %>% 
+         mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(gdp_per_capita/1000, n_users, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='GDP per capita (thousand USD)',
+       y='Number of users recording on iNaturalist') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+```
+
+### % of the GDP of the country dedicated to research
+
+```{r}
+#| label: gdp_in_research_country
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| fig-cap: 
+#| - "Number of records on iNaturalist vs % of the country's GDP dedicated to research"
+#| - "Number of iNat records on GBIF vs % of the country's GDP dedicated to research"
+#| - "Number of users recording on iNaturalist vs % of the country's GDP dedicated to research"
+#| - "Number of taxa recorded on iNaturalist vs % of the country's GDP dedicated to research"
+
+## records
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(gdp_in_research, n_records_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='GDP of the country dedicated to research (%)',
+       y='Number of records on iNaturalist (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## records in gbif
+ggplot(data_variables %>% mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(gdp_in_research, n_records_gbif_inat/1000, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='GDP of the country dedicated to research (%)',
+       y='Number of iNat records on GBIF (thousand)') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+
+## users
+ggplot(data_variables %>% 
+         mutate(site_on_iNat = ifelse(!is.na(site_id), 'yes', 'no')), 
+       aes(gdp_in_research,n_users, label = site_name)) +
+  geom_point(aes(col=site_on_iNat), size=2, show.legend = F) +
+  scale_color_manual(values = c('black', '#74AC00')) +
+  geom_smooth(method='lm', colour = 'black') +
+  geom_label_repel(aes(fill=site_on_iNat), 
+                   colour = "black", #fontface = "bold",
+                   segment.color = 'black',
+                   show.legend = F, max.overlaps= Inf) +
+  scale_fill_manual(values = c('#F7F7F7', '#74AC00')) +
+  labs(x='GDP of the country dedicated to research (%)',
+       y='Number of users recording on iNaturalist') +
+  scale_x_log10() + scale_y_log10() +
+  theme_bw()
+```
+
+
+## Modelling
+
+```{r}
+#| label: data-regressions
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_regressions <- data_variables %>% 
+  filter(country_code != 'US') %>% 
+  mutate(has_site = ifelse(!is.na(site_name), 1, 0)) %>% 
+  mutate(p_gbif = n_records_gbif_inat/n_records_inat) %>% 
+  select(country_code, n_records_inat, p_gbif, n_users, n_taxa,
+         area, gdp_per_capita, gdp_in_research, 
+         population, latitude, has_site) %>% 
+  filter(!is.na(gdp_in_research) & !is.na(latitude)) 
+
+###
+
+data_regressions %>% 
+  select(area, gdp_per_capita, gdp_in_research, 
+         population, latitude, has_site) %>% 
+  cor() %>% 
+  kableExtra::kbl(digits=3, format.args = list(big.mark = ',')) %>% 
+  kableExtra::kable_material('striped') 
+```
+
+## Random forest
+
+### Functions
+
+```{r}
+#| label: rf-function
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+source('R/random_forest_iNat.R')
+```
+
+### Total number of records on iNaturalist per country
+
+```{r}
+#| label: rf-n_records
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+rf_n_records <- model_iNat_RF(data_df = data_regressions, 
+              explanatory_variable = 'n_records_inat', 
+              skip_vars = c('p_gbif', 
+                            'n_users',
+                            'n_taxa'))
+
+# tuning
+rf_n_records[[1]]
+
+# observed vs predicted
+rf_n_records[[2]]
+
+# variable importance
+rf_n_records[[3]]
+ggsave(rf_n_records[[3]], filename='figs/variable_importance_n_records.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# partial plots
+rf_n_records[[4]]
+ggsave(rf_n_records[[4]], filename='figs/partial_plots_n_records.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# final model metrics
+rf_n_records[[5]] %>% 
+  select(dataset, rsq=.estimate) %>% 
+  mutate(rsq = round(rsq, 3)) %>% 
+  rename(`R^2` = rsq) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+
+# variable importance
+rf_n_records[[6]] %>% 
+  select(Variable, Importance=standardise_Importance) %>% 
+  mutate(Importance = round(Importance, 3)) %>% 
+  rename(`Portion of R^2` = Importance) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Proportion of records from iNaturalist on GBIF per country
+
+```{r}
+#| label: rf- gbif
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+rf_p_gbif <- model_iNat_RF(data_df = data_regressions, 
+              explanatory_variable = 'p_gbif', 
+              skip_vars = c('n_records_inat', 
+                            'n_users',
+                            'n_taxa'))
+
+# tuning
+rf_p_gbif[[1]]
+
+# observed vs predicted
+rf_p_gbif[[2]]
+
+# variable importance
+rf_p_gbif[[3]]
+ggsave(rf_p_gbif[[3]], filename='figs/variable_importance_p_gbif.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# partial plots
+rf_p_gbif[[4]]
+ggsave(rf_p_gbif[[4]], filename='figs/partial_plots_p_gbif.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# final model metrics
+rf_p_gbif[[5]] %>% 
+  select(dataset, rsq=.estimate) %>% 
+  mutate(rsq = round(rsq, 3)) %>% 
+  rename(`R^2` = rsq) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+
+# variable importance
+rf_p_gbif[[6]] %>% 
+  select(Variable, Importance=standardise_Importance) %>% 
+  mutate(Importance = round(Importance, 3)) %>% 
+  rename(`Portion of R^2` = Importance) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Number of users recording in the country
+
+```{r}
+#| label: rf-n_users
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+
+rf_n_users <- model_iNat_RF(data_df = data_regressions,
+                            explanatory_variable = 'n_users',
+                            skip_vars = c('n_records_inat',
+                                          'p_gbif',
+                                          'n_taxa'))
+# tuning
+rf_n_users[[1]]
+
+# observed vs predicted
+rf_n_users[[2]]
+
+# variable importance
+rf_n_users[[3]]
+ggsave(rf_n_users[[3]], filename='figs/variable_importance_n_users.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# partial plots
+rf_n_users[[4]]
+ggsave(rf_n_users[[4]], filename='figs/partial_plots_n_users.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# final model metrics
+rf_n_users[[5]] %>% 
+  select(dataset, rsq=.estimate) %>% 
+  mutate(rsq = round(rsq, 3)) %>% 
+  rename(`R^2` = rsq) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+
+# variable importance
+rf_n_users[[6]] %>% 
+  select(Variable, Importance=standardise_Importance) %>% 
+  mutate(Importance = round(Importance, 3)) %>% 
+  rename(`Portion of R^2` = Importance) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Number of taxa recorded in the country
+
+```{r}
+#| label: rf-n_taxa
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+
+rf_n_taxa <- model_iNat_RF(data_df = data_regressions,
+                           explanatory_variable = 'n_taxa',
+                           skip_vars = c('n_records_inat',
+                                         'p_gbif',
+                                         'n_users'))
+
+# tuning
+rf_n_taxa[[1]]
+
+# observed vs predicted
+rf_n_taxa[[2]]
+
+# variable importance
+rf_n_taxa[[3]]
+ggsave(rf_n_taxa[[3]], filename='figs/variable_importance_n_taxa.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# partial plots
+rf_n_taxa[[4]]
+ggsave(rf_n_taxa[[4]], filename='figs/partial_plots_n_taxa.png', device = 'png', dpi = 300, width = 8, height = 5)
+
+# final model metrics
+rf_n_taxa[[5]] %>% 
+  select(dataset, rsq=.estimate) %>% 
+  mutate(rsq = round(rsq, 3)) %>% 
+  rename(`R^2` = rsq) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+
+# variable importance
+rf_n_taxa[[6]] %>% 
+  select(Variable, Importance=standardise_Importance) %>% 
+  mutate(Importance = round(Importance, 3)) %>% 
+  rename(`Portion of R^2` = Importance) %>% 
+  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
