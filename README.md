@@ -58,6 +58,10 @@ Variables in the files:
   - `variable_importance_n_users.png`: a PNG figure with variable importance plots showing the contribution of variables to explain the number of users recording in iNaturalist in a country. 
   - `variable_importance_n_taxa.png`: a PNG figure with variable importance plots showing the contribution of variables to explain the number of taxa recorded in iNaturalist in a country.
 
+## **Documents**
+
+  - `poster_LivingData.pdf`: a PDF with the poster to be presented in the Living Data Conference in Bogotá (https://www.livingdata2025.com/posters.html?poster=7020814).   
+
 ## LICENCE
 
 **Data** are available under the terms of the Creative Commons Attribution 4.0 International licence CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/legalcode.en).   
