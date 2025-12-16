@@ -1,23 +1,23 @@
 #' Run Random Forest
 #'
 #' @param data_df 
-#' @param explanatory_variable 
+#' @param response_variable 
 #' @param skip_vars 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-model_iNat_RF <- function(data_df, explanatory_variable, skip_vars) {
+model_iNat_RF <- function(data_df, response_variable, skip_vars) {
   # random forest 
   set.seed(123) # useful to do the same split for spatial cross-validation
   data_split <- initial_split(data_df, prop = 3/4, 
-                              strata = !!sym(explanatory_variable))
+                              strata = !!sym(response_variable))
   data_train <- training(data_split)
   data_test <- testing(data_split) # for estimating performance later
   
   # recipe
-  rf_recipe <- recipe(formula = as.formula(paste(explanatory_variable, 
+  rf_recipe <- recipe(formula = as.formula(paste(response_variable, 
                                                  '~ .')),
                       data = data_train) %>%
     update_role(country_code, new_role = 'ID') %>%
@@ -87,24 +87,24 @@ model_iNat_RF <- function(data_df, explanatory_variable, skip_vars) {
   rf_fit_preds  <- collect_predictions(rf_fit)
   
   # get R2 from correlation
-  rsq_rf_fit_preds <- round((cor(rf_fit_preds$.pred, rf_fit_preds[[explanatory_variable]]))^2, 3)
+  rsq_rf_fit_preds <- round((cor(rf_fit_preds$.pred, rf_fit_preds[[response_variable]]))^2, 3)
   
-  # plot observed vs predictide values
+  # plot observed vs predicted values
   
-  if(explanatory_variable == 'n_records_inat') {
+  if(response_variable == 'n_records_inat') {
     plot_title = 'Number of records on iNaturalist'
   } 
-  if(explanatory_variable == 'p_gbif'){
+  if(response_variable == 'p_gbif'){
     plot_title = 'Proportion of records from iNaturalist on GBIF'
   }
-  if(explanatory_variable == 'n_users'){
+  if(response_variable == 'n_users'){
     plot_title = 'Number of users recording'
   } 
-  if(explanatory_variable == 'n_taxa'){
+  if(response_variable == 'n_taxa'){
     plot_title = 'Number of taxa recorded'
   }
   
-  plot_test_preds <- ggplot(rf_fit_preds, aes(!!sym(explanatory_variable), .pred)) +
+  plot_test_preds <- ggplot(rf_fit_preds, aes(!!sym(response_variable), .pred)) +
     geom_abline(lty = 2, color = 'orange', lwd=1) +
     geom_point(size=2, alpha = 0.5, col = 'grey35') +
     scale_x_continuous(labels = scales::label_number(scale_cut = c(m = 1000000))) +
@@ -112,10 +112,10 @@ model_iNat_RF <- function(data_df, explanatory_variable, skip_vars) {
     labs(x = 'Observed', y = 'Predicted',
          title= plot_title,
          subtitle = bquote(r == .(round(cor(rf_fit_preds$.pred, 
-                                            rf_fit_preds[[explanatory_variable]]),
+                                            rf_fit_preds[[response_variable]]),
                                         2)) ~ ", " ~ R^2 == .(round(rsq_rf_fit_preds, 2))),
          paste0('Pearson correlation: ', round(cor(rf_fit_preds$.pred, 
-                                                   rf_fit_preds[[explanatory_variable]]), 3))) +
+                                                   rf_fit_preds[[response_variable]]), 3))) +
     coord_fixed() +
     ggpubr::theme_classic2()
   
@@ -206,26 +206,26 @@ model_iNat_RF <- function(data_df, explanatory_variable, skip_vars) {
   # # collect predictions on fitted resamples
   # rf_cv_spatial_preds <- collect_predictions(rf_cv_spatial)
   # rsq_rf_cv_spatial_preds <- round((cor(rf_cv_spatial_preds$.pred, 
-  #                                       rf_cv_spatial_preds[[explanatory_variable]]))^2, 3)
+  #                                       rf_cv_spatial_preds[[response_variable]]))^2, 3)
   # 
   # 
-  # if(explanatory_variable == 'richness_change') {
+  # if(response_variable == 'richness_change') {
   #   plot_title_cv = 'Change in species richness (cross-validation)'
   # } else {
   #   plot_title_cv = 'Temporal turnover (cross-validation)'
   # }
   # 
   # # plot observed vs predicted
-  # plot_cv_spatial_preds <- ggplot(rf_cv_spatial_preds, aes(!!sym(explanatory_variable), .pred)) +
+  # plot_cv_spatial_preds <- ggplot(rf_cv_spatial_preds, aes(!!sym(response_variable), .pred)) +
   #   geom_abline(lty = 2, color = 'orange', lwd=1) +
   #   geom_point(size=2, alpha = 0.5, col = 'grey35') +
   #   labs(x = 'Observed', y = 'Predicted',
   #        title= plot_title_cv,
   #        subtitle = bquote(r == .(round(cor(rf_cv_spatial_preds$.pred, 
-  #                                           rf_cv_spatial_preds[[explanatory_variable]]),
+  #                                           rf_cv_spatial_preds[[response_variable]]),
   #                                       2)) ~ ", " ~ R^2 == .(round(rsq_rf_cv_spatial_preds, 2))),
   #        paste0('Pearson correlation: ', round(cor(rf_cv_spatial_preds$.pred, 
-  #                                                  rf_cv_spatial_preds[[explanatory_variable]]), 3))) +
+  #                                                  rf_cv_spatial_preds[[response_variable]]), 3))) +
   #   coord_fixed() +
   #   ggpubr::theme_classic2()
   # 
@@ -240,8 +240,8 @@ model_iNat_RF <- function(data_df, explanatory_variable, skip_vars) {
   train_preds <- predict(final_fit, data_train) %>%
     bind_cols(data_train)
   
-  train_rsq <- rsq(train_preds, truth = !!sym(explanatory_variable), estimate = .pred)
-  test_rsq <- rsq(rf_fit_preds, truth = !!sym(explanatory_variable), estimate = .pred)
+  train_rsq <- rsq(train_preds, truth = !!sym(response_variable), estimate = .pred)
+  test_rsq <- rsq(rf_fit_preds, truth = !!sym(response_variable), estimate = .pred)
   
   rsq_train_test <- bind_rows(train = train_rsq,
                               test  = test_rsq,
