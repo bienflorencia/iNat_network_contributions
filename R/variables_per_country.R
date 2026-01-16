@@ -109,7 +109,8 @@ getGBIFrecordsPerCountry <- function(list_of_country_codes,
 #' getiNatRecordsPerCountry(c('Brazil', 'Argentina'))
 getiNatRecordsPerCountry <- function(list_of_country_names, 
                                      verbose=FALSE,
-                                     return_vector = FALSE){
+                                     return_vector = FALSE,
+                                     sleep_time = 10){
   
   results <- tibble(country_name = character(),
                     n_records_inat = numeric())
@@ -117,7 +118,9 @@ getiNatRecordsPerCountry <- function(list_of_country_names,
   api <- 'https://api.inaturalist.org/v1'
   page <- '&page=1&per_page=1'
   
-  for(country_name in list_of_country_names){
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
     
     if(verbose==TRUE){
       cat('Fetching data for: ', country_name, '\n')
@@ -139,6 +142,63 @@ getiNatRecordsPerCountry <- function(list_of_country_names,
     results <- add_row(results,
                        country_name = country_name,
                        n_records_inat = n_obs)
+    
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
+  }
+  
+  # If user wants a numeric vector for mutate()
+  if (return_vector) {
+    return(results$n_records_inat)
+  }
+  
+  return(results)
+}
+
+getiNatRecordsPerPlaceID <- function(list_of_place_ids, 
+                                     verbose=FALSE,
+                                     return_vector = FALSE,
+                                     sleep_time = 10){
+  
+  results <- tibble(place_id = numeric(),
+                    n_records_inat = numeric())
+  
+  api <- 'https://api.inaturalist.org/v1'
+  page <- '&page=1&per_page=1'
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if(verbose==TRUE){
+      cat('Fetching data for: ', place_id, '\n')
+    }
+
+    if(!is.na(place_id)){
+      call_url_observations <- str_glue('{api}/observations?verifiable=true&place_id={place_id}')
+      
+      get_json_call_observations <- GET(url = call_url_observations) %>%
+        content(as = "text") %>% fromJSON(flatten = TRUE)
+      
+      n_obs <- get_json_call_observations$total_results
+    } else {
+      n_obs <- NA
+    }
+    
+    results <- add_row(results,
+                       place_id = place_id,
+                       n_records_inat = n_obs)
+    
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
   }
   
   # If user wants a numeric vector for mutate()
@@ -156,7 +216,7 @@ getiNatRecordsPerCountry <- function(list_of_country_names,
 #'
 #' @param list_of_country_names A country name in English, or a list of country names 
 #'
-#' @returns A tibble with the country name (`country_name`), and the proportion of records on iNaturalist in the country tha reach "Research Grade" (`p_research_grade`)
+#' @returns A tibble with the country name (`country_name`), and the proportion of records on iNaturalist in the country that reach "Research Grade" (`p_research_grade`)
 #' @export
 #'
 #' @examples
@@ -164,7 +224,8 @@ getiNatRecordsPerCountry <- function(list_of_country_names,
 #' getiNatResearchPropPerCountry(c('Brazil', 'Argentina'))
 getiNatResearchPropPerCountry <- function(list_of_country_names,
                                           verbose=FALSE,
-                                          return_vector = FALSE){
+                                          return_vector = FALSE,
+                                          sleep_time = 10){
   
   results <- tibble(country_name = character(),
                     p_research_grade = numeric())
@@ -172,7 +233,9 @@ getiNatResearchPropPerCountry <- function(list_of_country_names,
   api <- 'https://api.inaturalist.org/v1'
   page <- '&page=1&per_page=1'
   
-  for(country_name in list_of_country_names){
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
     
     if(verbose==TRUE){
       cat('Fetching data for: ', country_name, '\n')
@@ -201,11 +264,78 @@ getiNatResearchPropPerCountry <- function(list_of_country_names,
     results <- add_row(results,
                        country_name = country_name,
                        p_research_grade = n_obs_research/n_obs)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
   }
   
   # If user wants a numeric vector for mutate()
   if (return_vector) {
-    return(results$n_records_inat)
+    return(results$p_research_grade)
+  }
+  
+  return(results)
+}
+
+
+getiNatResearchPropPerPlaceID <- function(list_of_place_ids,
+                                       verbose=FALSE,
+                                       return_vector = FALSE,
+                                       sleep_time = 10){
+  
+  results <- tibble(place_id = numeric(),
+                    p_research_grade = numeric())
+  
+  api <- 'https://api.inaturalist.org/v1'
+  page <- '&page=1&per_page=1'
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if(verbose==TRUE){
+      cat('Fetching data for: ', place_id, '\n')
+    }
+    
+    if(!is.na(place_id)){
+      call_url_observations <- str_glue('{api}/observations?verifiable=true&place_id={place_id}')
+      
+      call_url_research_grade <- str_glue('{api}/observations?verifiable=true&quality_grade=research&place_id={place_id}')
+      
+      get_json_call_observations <- GET(url = call_url_observations) %>%
+        content(as = "text") %>% fromJSON(flatten = TRUE)
+      
+      get_json_call_research_grade <- GET(url = call_url_research_grade) %>%
+        content(as = "text") %>% fromJSON(flatten = TRUE)
+      
+      n_obs <- get_json_call_observations$total_results
+      n_obs_research <- get_json_call_research_grade$total_results
+    } else {
+      n_obs <- NA
+      n_obs_research <- NA
+    }
+    
+    results <- add_row(results,
+                       place_id = place_id,
+                       p_research_grade = n_obs_research/n_obs)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
+  }
+  
+  # If user wants a numeric vector for mutate()
+  if (return_vector) {
+    return(results$p_research_grade)
   }
   
   return(results)
@@ -226,7 +356,8 @@ getiNatResearchPropPerCountry <- function(list_of_country_names,
 #' getiNatUsersPerCountry(c('Brazil', 'Argentina'))
 getiNatUsersPerCountry <- function(list_of_country_names, 
                                    verbose=FALSE,
-                                   return_vector=FALSE){
+                                   return_vector=FALSE,
+                                   sleep_time = 10){
   
   results <- tibble(country_name = character(),
                     n_users = numeric())
@@ -234,7 +365,9 @@ getiNatUsersPerCountry <- function(list_of_country_names,
   api <- 'https://api.inaturalist.org/v1/observations/observers'
   page <- '&page=1&per_page=1'
   
-  for(country_name in list_of_country_names){
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
   
     if(verbose==TRUE){
       cat('Fetching data for: ', country_name, '\n')
@@ -255,7 +388,64 @@ getiNatUsersPerCountry <- function(list_of_country_names,
     results <- add_row(results,
                        country_name = country_name,
                        n_users = n_users)
+
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
       
+  }
+  # If user wants a numeric vector for mutate()
+  if (return_vector) {
+    return(results$n_users)
+  }
+  return(results)
+}
+
+getiNatUsersPerPlaceID <- function(list_of_place_ids, 
+                                   verbose=FALSE,
+                                   return_vector=FALSE,
+                                   sleep_time = 10){
+  
+  results <- tibble(place_id = numeric(),
+                    n_users = numeric())
+  
+  api <- 'https://api.inaturalist.org/v1/observations/observers'
+  page <- '&page=1&per_page=1'
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if(verbose==TRUE){
+      cat('Fetching data for: ', place_id, '\n')
+    }
+    
+    if(!is.na(place_id)){
+      call_url_observations <- str_glue('{api}?verifiable=true&place_id={place_id}')
+      get_json_call_observations <- GET(url = call_url_observations) %>%
+        content(as = "text") %>% fromJSON(flatten = TRUE)
+      
+      n_users <- get_json_call_observations$total_results
+    } else {
+      n_users <- NA
+    }
+    
+    results <- add_row(results,
+                       place_id = place_id,
+                       n_users = n_users)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
+    
   }
   # If user wants a numeric vector for mutate()
   if (return_vector) {
@@ -277,7 +467,8 @@ getiNatUsersPerCountry <- function(list_of_country_names,
 #' @examples
 getiNatTaxaPerCountry <- function(list_of_country_names, 
                                   verbose=FALSE,
-                                  return_vector = FALSE){
+                                  return_vector = FALSE,
+                                  sleep_time = 10){
   
   results <- tibble(country_name = character(),
                     n_taxa = numeric())
@@ -285,7 +476,9 @@ getiNatTaxaPerCountry <- function(list_of_country_names,
   api <- 'https://api.inaturalist.org/v1/observations/species_counts'
   page <- '&page=1&per_page=1'
   
-  for(country_name in list_of_country_names){
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
     
     if(verbose==TRUE){
       cat('Fetching data for: ', country_name, '\n')
@@ -308,6 +501,13 @@ getiNatTaxaPerCountry <- function(list_of_country_names,
                        country_name = country_name,
                        n_taxa = n_taxa)
     
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
   }
   # If user wants a numeric vector for mutate()
   if (return_vector) {
@@ -316,6 +516,58 @@ getiNatTaxaPerCountry <- function(list_of_country_names,
   return(results)
 }
 
+
+getiNatTaxaPerPlaceID <- function(list_of_place_ids, 
+                                  verbose=FALSE,
+                                  return_vector = FALSE,
+                                  sleep_time = 10){
+  
+  results <- tibble(place_id = numeric(),
+                    n_taxa = numeric())
+  
+  api <- 'https://api.inaturalist.org/v1/observations/species_counts'
+  page <- '&page=1&per_page=1'
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if(verbose==TRUE){
+      cat('Fetching data for: ', place_id, '\n')
+    }
+    
+    if(!is.na(place_id)){
+      call_url_observations <- str_glue('{api}?verifiable=true&place_id={place_id}')
+      get_json_call_observations <- GET(url = call_url_observations) %>%
+        content(as = "text") %>% fromJSON(flatten = TRUE)
+      
+      n_taxa <- get_json_call_observations$total_results
+      
+    } else{
+      n_taxa <- NA
+    }
+    
+    results <- add_row(results,
+                       place_id = place_id,
+                       n_taxa = n_taxa)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
+  }
+  # If user wants a numeric vector for mutate()
+  if (return_vector) {
+    return(results$n_taxa)
+  }
+  return(results)
+}
+
+##################################################################
+##################################################################
 ##################################################################
 
 #' Country's area
@@ -331,32 +583,48 @@ getiNatTaxaPerCountry <- function(list_of_country_names,
 #' getAreaPerCountry(c('AR', 'BR', 'PY'))
 getAreaPerCountry <- function(list_of_country_codes, 
                               verbose=FALSE,
-                              return_vector = FALSE){
+                              return_vector = FALSE,
+                              sleep_time = 2){
   
   results <- tibble(country_code = character(),
                     area = numeric())
   
-  for(country_code in list_of_country_codes){
+  api <- 'https://api.worldbank.org/v2/en/country/'
+  indicator <- 'AG.SRF.TOTL.K2'
+  format <- '?mrv=1&format=json'
+  
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
     
     if(verbose==TRUE){
       cat('Fetching data for:', country_code, '\n')
     }
     
-    area <- try(WDI::WDI(country = country_code, 
-                            indicator = 'AG.SRF.TOTL.K2',
-                            latest = 1), silent=T)
+    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
     
-    if(inherits(area, "try-error")){
-      area_value <- NA
+    get_json_call <- GET(url = call_url) %>%
+      content(as = "text") %>% fromJSON(flatten = TRUE)
+    
+    if(length(get_json_call) == 2){
+      indicator_value <- as.numeric(get_json_call[[2]]$value)
     } else {
-      area_value <- suppressWarnings(area %>% 
-                                     pull(AG.SRF.TOTL.K2))
-      if(length(area_value) == 0) area_value <- NA
+      indicator_value <- NA
     }
+    
     results <- add_row(results,
                        country_code = country_code,
-                       area = area_value)
+                       area = indicator_value)
+    
+    # ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
   }
+  
   # return a single vector if requested
   if (return_vector) {
     return(results$area)
@@ -371,7 +639,7 @@ getAreaPerCountry <- function(list_of_country_codes,
 #'
 #' @param list_of_country_codes A country ISO two-letters code, or a list of codes 
 #'
-#' @return A tibble with the country ISO code (`country_code`) and the population of the country (`pop`)
+#' @return A tibble with the country ISO code (`country_code`) and the population of the country (`population`)
 #' @export
 #'
 #' @examples
@@ -379,33 +647,47 @@ getAreaPerCountry <- function(list_of_country_codes,
 #' getPopulationPerCountry(c('AR', 'BR', 'PY'))
 getPopulationPerCountry <- function(list_of_country_codes, 
                                     verbose=FALSE,
-                                    return_vector = FALSE){
+                                    return_vector = FALSE,
+                                    sleep_time = 2){
   
   results <- tibble(country_code = character(),
-                   population = numeric())
+                    population = numeric())
   
-  for(country_code in list_of_country_codes){
+  api <- 'https://api.worldbank.org/v2/en/country/'
+  indicator <- 'SP.POP.TOTL'
+  format <- '?mrv=1&format=json'
+  
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
     
     if(verbose==TRUE){
-      cat('Fetching data for: ', country_code, '\n')
+      cat('Fetching data for:', country_code, '\n')
     }
     
-    population <- try(WDI::WDI(country = country_code, 
-                               indicator = 'SP.POP.TOTL',
-                               latest = 1), silent = T)
+    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
     
-    if(inherits(population, 'try-error')){ 
-      pop_value <- NA
+    get_json_call <- GET(url = call_url) %>%
+      content(as = "text") %>% fromJSON(flatten = TRUE)
+    
+    if(length(get_json_call) == 2){
+      indicator_value <- as.numeric(get_json_call[[2]]$value)
     } else {
-      pop_value <- suppressWarnings(population %>% 
-                                      pull(SP.POP.TOTL))
-      # In case WDI returns no rows
-      if (length(pop_value) == 0) pop_value <- NA
-      }
+      indicator_value <- NA
+    }
     
     results <- add_row(results,
-                      country_code = country_code,
-                      population = pop_value)
+                       country_code = country_code,
+                       population = indicator_value)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
+    
   }
   
   # return a single vector if requested
@@ -431,33 +713,46 @@ getPopulationPerCountry <- function(list_of_country_codes,
 #' getGDPperCapitaPerCountry(c('AR', 'BR', 'PY'))
 getGDPperCapitaPerCountry <- function(list_of_country_codes,
                                       verbose=FALSE,
-                                      return_vector = FALSE){
+                                      return_vector = FALSE,
+                                      sleep_time = 2){
   
   results <- tibble(country_code = character(),
                     gdp_per_capita = numeric())
   
-  for(country_code in list_of_country_codes){
+  api <- 'https://api.worldbank.org/v2/en/country/'
+  indicator <- 'NY.GDP.PCAP.CD'
+  format <- '?mrv=1&format=json'
+  
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
     
     if(verbose==TRUE){
       cat('Fetching data for: ', country_code, '\n')
     }
     
-    gdp <- try(WDI::WDI(country = country_code,
-                        indicator = 'NY.GDP.PCAP.CD',
-                        latest = 1), silent = T)
+    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
     
-    if(inherits(gdp, "try-error")){ 
-      gdp_value <-  NA
+    get_json_call <- GET(url = call_url) %>%
+      content(as = "text") %>% fromJSON(flatten = TRUE)
+    
+    if(length(get_json_call) == 2){
+      indicator_value <- as.numeric(get_json_call[[2]]$value)
     } else {
-      gdp_value <- suppressWarnings(gdp %>% 
-                                      pull(NY.GDP.PCAP.CD))
-      # In case WDI returns no rows
-      if (length(gdp_value) == 0) gdp_value <- NA
+      indicator_value <- NA
     }
     
     results <- add_row(results,
                        country_code = country_code,
-                       gdp_per_capita = gdp_value)
+                       gdp_per_capita = indicator_value)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
   }
   # return a single vector if requested
   if (return_vector) {
@@ -481,32 +776,46 @@ getGDPperCapitaPerCountry <- function(list_of_country_codes,
 #' getGDPinResearchPerCountry(c('AR', 'BR', 'PY'))
 getGDPinResearchPerCountry <- function(list_of_country_codes,
                                        verbose=FALSE,
-                                       return_vector = FALSE){
+                                       return_vector = FALSE,
+                                       sleep_time = 2){
   
   results <- tibble(country_code = character(),
                     gdp_in_research = numeric())
   
-  for(country_code in list_of_country_codes){
+  api <- 'https://api.worldbank.org/v2/en/country/'
+  indicator <- 'GB.XPD.RSDV.GD.ZS'
+  format <- '?mrv=1&format=json'
+  
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
     
     if(verbose==TRUE){
       cat('Fetching data for: ', country_code, '\n')
     }
     
-    gdp_research <- try(WDI::WDI(country = country_code,
-                                 indicator = 'GB.XPD.RSDV.GD.ZS',
-                                 latest = 1), silent = T)
+    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
     
-    if(inherits(gdp_research, "try-error")){ 
-      gdp_research_value <- NA
+    get_json_call <- GET(url = call_url) %>%
+      content(as = "text") %>% fromJSON(flatten = TRUE)
+    
+    if(length(get_json_call) == 2){
+      indicator_value <- as.numeric(get_json_call[[2]]$value)
     } else {
-      gdp_research_value <- suppressWarnings(gdp_research %>%
-                                               pull(GB.XPD.RSDV.GD.ZS))
-      if (length(gdp_research_value) == 0) gdp_research_value <- NA
+      indicator_value <- NA
     }
     
     results <- add_row(results,
                        country_code = country_code,
-                       gdp_in_research = gdp_research_value)
+                       gdp_in_research = indicator_value)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
     
   }
   if (return_vector) {
@@ -545,13 +854,13 @@ getLatitudePerCountry <- function(list_of_country_codes,
                                              'country.name')
     
     latitude <- try(rnaturalearth::ne_countries(country = country_name, 
-                                                returnclass = 'sf'),
-                    silent = T)
+                                                returnclass = 'sf')%>% 
+                      st_make_valid(), silent = T) 
     
     if(inherits(latitude, "try-error")){ 
       latitude_value <- NA
     } else {
-      latitude_value <- sf::st_coordinates(sf::st_centroid(latitude$geometry))[1,2]
+      latitude_value <- suppressWarnings(sf::st_coordinates(sf::st_centroid(latitude$geometry))[1,2])
     }
     
     results <- add_row(results,
@@ -580,7 +889,8 @@ getLatitudePerCountry <- function(list_of_country_codes,
 getNspeciesPerCountry <- function(api_key, 
                                   list_of_country_codes, 
                                   verbose=FALSE,
-                                  return_vector = FALSE) {
+                                  return_vector = FALSE,
+                                  sleep_time = 2) {
   
   # Define the base URL for the IUCN Red List API
   base_url <- "https://api.iucnredlist.org/api/v4"
@@ -592,7 +902,9 @@ getNspeciesPerCountry <- function(api_key,
   results <- tibble(country_code = character(),
                     n_species = numeric())
   
-  for (country_code in list_of_country_codes) {
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
     
     if(verbose==TRUE){
       cat('Fetching data for: ', country_code, '\n')
@@ -617,56 +929,78 @@ getNspeciesPerCountry <- function(api_key,
                        country_code = country_code,
                        n_species = n_species)
     
-    if (return_vector) {
-      return(results$n_species)
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
     }
+  }
+  if (return_vector) {
+    return(results$n_species)
   }
   return(results)
 }
-
 
 ########################################################################
 
 #' 
 #' 
-
-getNeighboursWithSite <- function(list_of_country_codes, 
-                                  verbose=FALSE,
-                                  return_vector = FALSE) {
+getIfNeighboursHaveSite <- function(list_of_country_codes,
+                                    inat_nodes,
+                                    verbose = FALSE,
+                                    return_vector = FALSE) {
   
   results <- tibble(country_code = character(),
-                    latitude = numeric())
+                    neighbour_has_node = numeric())
   
-  for(country_code in list_of_country_codes){
+  # Load world polygons once
+  world <- rnaturalearth::ne_countries(scale = "medium",
+                                       returnclass = "sf")  %>% 
+    dplyr::select(iso_a2, geometry)
+  
+  inat_nodes_codes <- countrycode::countrycode(inat_nodes,
+                                               "country.name",
+                                               "iso2c")  
+  
+  for (country_code in list_of_country_codes) {
     
-    if(verbose==TRUE){
-      cat('Fetching data for: ', country_code, '\n')
+    if (verbose) {
+      cat("Checking neighbours for:", country_code, "\n")
     }
     
-    country_name <- countrycode::countrycode(country_code, 
-                                             'iso2c',
-                                             'country.name')
+    # try spatial neighbour calculation
+    neighbour_test <- try({
+      
+      target <- world %>% filter(iso_a2 == country_code)
+      refs   <- world %>% filter(iso_a2 %in% inat_nodes_codes)
+      
+      touches <- sf::st_touches(target, refs)[[1]]
+      neighbour_countries <- refs$iso_a2[touches]
     
-    latitude <- try(rnaturalearth::ne_countries(country = country_name, 
-                                                returnclass = 'sf'),
-                    silent = T)
+      as.integer(any(inat_nodes_codes %in% neighbour_countries))
+      
+    }, silent = TRUE)
     
-    if(inherits(latitude, "try-error")){ 
-      latitude_value <- NA
+    if (inherits(neighbour_test, "try-error")) {
+      neighbour_value <- NA
     } else {
-      latitude_value <- sf::st_coordinates(sf::st_centroid(latitude$geometry))[1,2]
+      neighbour_value <- neighbour_test
     }
     
     results <- add_row(results,
                        country_code = country_code,
-                       latitude = latitude_value)
+                       neighbour_has_node = neighbour_value)
   }
-  if (return_vector) {
-    return(results$latitude)
-  }
-  return(results)
   
+  if (return_vector) {
+    return(results$neighbour_has_node)
+  }
+  
+  return(results)
 }
+
 ########################################################################
 
 #' All variables per country
@@ -682,39 +1016,100 @@ getNeighboursWithSite <- function(list_of_country_codes,
 #'                     country_code = c('UY', 'AR'))
 #' getCountryVariables(df = countries, IUCN_token=Sys.getenv('IUCN_REDLIST_KEY'))
 
-getCountryVariables <- function(df, IUCN_token) {
+getCountryVariables <- function(df, IUCN_token, inat_nodes) {
   
   stopifnot(all(c("country_code", "country_name") %in% names(df)))
   
-  # gbif_vals <- getGBIFrecordsPerCountry(df$country_code, return_vectors = TRUE)
+  start_time <- Sys.time()
   
-  # n_records_gbif  <- gbif_vals$n_records_gbif
-  # n_records_gbif_inat <- gbif_vals$n_records_gbif_inat
-  n_inat_country <- getiNatRecordsPerCountry(df$country_name)
-  p_research_grade <- getiNatResearchPropPerCountry(df$country_name)
-  n_users_country<- getiNatUsersPerCountry(df$country_name)
-  n_taxa_country <-  getiNatTaxaPerCountry(df$country_name)
-  area_country <-  getAreaPerCountry(df$country_code)
-  population <-  getPopulationPerCountry(df$country_code)
-  gdp_per_capita <-  getGDPperCapitaPerCountry(df$country_code)
-  gdp_in_research <-  getGDPinResearchPerCountry(df$country_code)
-  latitude <-  getLatitudePerCountry(df$country_code)
-  n_species <-  getNspeciesPerCountry(api_key=IUCN_token, df$country_code)
+  cat(' *** Getting number of records on iNat for a country\n')
+  n_records <- getiNatRecordsPerCountry(df$country_name, 
+                                             sleep_time = 10,
+                                             verbose = T,
+                                             return_vector = T)
+  Sys.sleep(20)
+  cat('\n')
+  cat(' *** Getting the proportion of records that reach Research Grade for a country\n')
+  p_research_grade <- getiNatResearchPropPerCountry(df$country_name, 
+                                                    sleep_time = 20,
+                                                    verbose = T,
+                                                    return_vector = T)
+  Sys.sleep(20)
+  cat('\n')
+  cat(' *** Getting number of users on iNat for a country\n')
+  n_users <- getiNatUsersPerCountry(df$country_name, 
+                                           sleep_time = 20,
+                                           verbose = T,
+                                           return_vector = T)
+  Sys.sleep(20)
+  cat('\n')
+  cat(' *** Getting number of taxa on iNat for a country\n')
+  n_taxa <-  getiNatTaxaPerCountry(df$country_name, 
+                                           sleep_time = 20,
+                                           verbose = T,
+                                           return_vector = T)
+  Sys.sleep(20)
+  cat('\n')
+  cat(' *** Getting the area of the country\n')
+  area <-  getAreaPerCountry(df$country_code, 
+                                     sleep_time = 5,
+                                     verbose = T,
+                                     return_vector = T)
+  Sys.sleep(20)
+  cat('\n')
+  cat(' *** Getting the population of the country\n')
+  population <-  getPopulationPerCountry(df$country_code, 
+                                         sleep_time = 5,
+                                         verbose = T,
+                                         return_vector = T)
+  Sys.sleep(20)
+  cat('\n')
+  cat(' *** Getting the GDP per capita of the country\n')
+  gdp_per_capita <-  getGDPperCapitaPerCountry(df$country_code, 
+                                               sleep_time = 5,
+                                               verbose = T,
+                                               return_vector = T)
+  Sys.sleep(20)
+  cat('\n')
+  cat(' *** Getting the % of GDP in research of the country\n')
+  gdp_in_research <-  getGDPinResearchPerCountry(df$country_code, 
+                                                 sleep_time = 5,
+                                                 verbose = T,
+                                                 return_vector = T)
+  cat('\n')
+  cat(' *** Getting the latitude of the country\n')
+  latitude <-  getLatitudePerCountry(df$country_code, 
+                                     verbose = T,
+                                     return_vector = T)
+  
+  cat('\n')
+  cat(' *** Getting the number of species on UICN for the country\n')
+  n_species <-  getNspeciesPerCountry(api_key=IUCN_token, 
+                                      df$country_code, 
+                                      verbose = T,
+                                      return_vector = T)
+  cat('\n')
+  cat(' *** Getting if neighbouring countries are part of the iNat Network\n')
+  neighbour_has_node <-  getIfNeighboursHaveSite(df$country_code,
+                                                 inat_nodes = iNat_network$node,
+                                                 verbose = T,
+                                                 return_vector = T)
+  
+  end_time <- Sys.time()
+  cat('Total time taken:', end_time-start_time, '\n')
 
-  per_country <- countries %>%
+  per_country <- df %>%
     mutate(
-      # n_records_gbif      = gbif_vals$n_records_gbif,
-      # n_records_gbif_inat = gbif_vals$n_records_gbif_inat,
-      n_inat_country      = n_inat_country,
+      n_records           = n_records,
       p_research_grade    = p_research_grade,
-      n_users_country     = n_users_country,
-      n_taxa_country      = n_taxa_country,
-      area_country        = area_country,
+      n_users             = n_users,
+      n_taxa              = n_taxa,
+      area                = area,
       population          = population,
       gdp_per_capita      = gdp_per_capita,
       gdp_in_research     = gdp_in_research,
       latitude            = latitude,
-      n_species           = n_species
+      n_species           = n_species,
+      neighbour_has_node  = neighbour_has_node
     )
-  
 }
