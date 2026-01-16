@@ -5,3 +5,6 @@
 
 /.quarto/
 .DS_Store
+
+**/*.quarto_ipynb
+figs/figure_preparation.svg
