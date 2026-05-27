@@ -74,17 +74,16 @@ Each response variable has two associated figures: **partial plots** (showing th
 | Response variable | Partial plots | Variable importance |
 |---|---|---|
 | Number of records | `partial_plots_n_records.png` | `variable_importance_n_records.png` |
- `variable_importance_p_research_grade.png` |
 | Number of users | `partial_plots_n_users.png` | `variable_importance_n_users.png` |
 | Number of species | `partial_plots_n_species.png` | `variable_importance_n_species.png` |
 | Number of projects | `partial_plots_n_projects.png` | `variable_importance_n_projects.png` |
 | Number of literature records | `partial_plots_n_literature.png` | `variable_importance_n_literature.png` |
-| Proportion of observations that reached Research Grade | `partial_plots_p_research_grade.png` |
+| Proportion of observations that reached Research Grade | `partial_plots_p_research_grade.png` |  `variable_importance_p_research_grade.png` |
 
-Other figures
+### Other figures
 
 | File | Description |
-|---|---|---|
+|---|---|
 | `hist_response_variables.png` | Histograms of the 6 response variables |
 | `hist_explanatory_variables.png` | Histograms of the 8 explanatory variables |
 | `timeline_nodes.png.png` | Timeline of the creation of each node in the network and the type of organisation behind it (government, NGO, university, or museum) |
