@@ -1,8 +1,8 @@
 # Contributions from the iNaturalist network
 
-## Growing global, empowered locally: the importance of the iNaturalist network
+## The impact of nationally organised efforts on global citizen-science platforms
 
-*Florencia Grattarola <a dir="ltr" href="http://orcid.org/0000-0001-8282-5732" target="_blank"><img class="is-rounded" src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg" width="15"></a>, Montserrat Almaraz, Carlos Galindo-Leal, Thomas Mesaglio, Colin D. Meurk, Peggy Newman, Leonel Roget, Carolina Soto-Vargas, Patrícia Tiago*
+*Florencia Grattarola <a dir="ltr" href="http://orcid.org/0000-0001-8282-5732" target="_blank"><img class="is-rounded" src="https://upload.wikimedia.org/wikipedia/commons/0/06/ORCID_iD.svg" width="15"></a>, Montserrat Almaraz, Corey Callaghan, Petr Keil, Cheng-Tao Lin, Thomas Mesaglio, Michelle Monge Velázquez, Gandhi Emanuel Ponce Juárez, Carolina Soto Vargas, Patricia Tiago, Alpo E. Turunen*
 
 This repository ([https://github.com/bienflorencia/iNat_network_contributions](https://github.com/bienflorencia/iNat_network_contributions)) contains the code and data to reproduce our study on the contributions of iNaturalist Network countries to the global platform.
 
@@ -13,62 +13,93 @@ This repository ([https://github.com/bienflorencia/iNat_network_contributions](h
 
 ---
 
-## **Code**
+## Code
 
-  - `R/variables_per_country.R`: an R file with all the functions used to download the variables per country.  
-  - `R/random_forest_iNat.R`: an R file with the functions used to run the random forest models, generate the partial plots and the variable importance plots for the variables.  
-  - `vignettes/iNat_network_contributions.qmd`: a Quarto file with the code used to download the data, generate summaries, run the models and produce figures.  
-  - `vignettes/iNat_network_contributions.html`: an HTML file with the code used to download the data, generate summaries, run the models and produce figures.  
+| File | Description |
+|------|-------------|
+| `R/funs_data_download.R` | Functions to download per-country variables and time series of number of records |
+| `R/funs_random_forest.R` | Functions to run random forest models, and generate partial and variable importance plots |
+| `R/data_download_time_series.R` | Code to download per-country time series of number of records |
+| `R/data_download_variables.R` | Code to download all per-country variables |
+| `vignettes/iNat_network_contributions.qmd` | Quarto source file to produce data summaries, run  models, and produces figures |
+| `vignettes/iNat_network_contributions.html` | Rendered HTML output of the Quarto file above |
 
-## **Data**
+## Data
 
-  - `UnitedStates_data_variables.rds`: an RDS file containing the variables for the US.  
-  - `America_data_variables.rds`: an RDS file containing the variables for all countries in America (except the US).  
-  - `Asia_data_variables.rds`: an RDS file containing the variables for all countries in Asia.  
-  - `Europe_data_variables.rds`: an RDS file containing the variables for all countries in Europe.  
-  - `Oceania_data_variables.rds`: an RDS file containing the variables for all countries in Oceania.  
-  - `Global_data_variables.rds`:  an RDS file containing the variables for all countries in the four continents.  
+| File | Description |
+|------|----------|
+| `data_global_time_series.csv` | a csv file containing the number of records on iNaturalist for each country from 2011 to 2025 |
+| `data_global_variables.csv` | a csv file containing all the response and explanatory variables for each country |
+| `inat_nodes.csv` | a csv file containing information on the iNaturalist network members, such as the node id, name, type of organisation behind it (government, NGO, university, or museum), and year of creation |
+| `inat_places.csv` | a csv file containing a list of all `place_id`s on iNat (from: http://www.inaturalist.org/places/inaturalist-places.csv.zip)  |
 
-Variables in the files: 
-  - `continent`: continent where the country is located
-  - `country_name`: country name in English         
-  - `country_code`: country ISO two-letter code 
-  - `site_name`: the name of the iNaturalist site in the country
-  - `site_id`:  the site ID of the iNaturalist site in the country
-  - `n_records_gbif`: the number of records in GBIF in the country      
-  - `n_records_gbif_inat`: the number of records from iNaturalist in GBIF in the country
-  - `n_records_inat`: the number of records in iNaturalist in the country
-  - `n_users`: the number of users recording in iNaturalist in the country  
-  - `n_taxa`: the number of taxa recorded in iNaturalist in the country     
-  - `area`: the area of the country in km^2.  
-  - `population`: the population of the country.              
-  - `gdp_per_capita`: the country's GDP per capita.                 
-  - `gdp_in_research`: the research and development expenditure (% of GDP) for a country.  
-  - `latitude`: the latitude of a country's geographic centroid (as a proxy of biodiversity richness).        
 
-## **Figures**
+### Variables (per country)
 
-  - `partial_plots_n_records.png`: a PNG figure with the partial plots of the variables explaining the number of records in iNaturalist in a country.  
-  - `partial_plots_p_gbif.png`: a PNG figure with the partial plots of the variables explaining the proportion of records from iNaturalist on GBIF in a country.  
-  - `partial_plots_n_users.png`: a PNG figure with the partial plots of the variables explaining the number of users recording in iNaturalist in a country.   
-  - `partial_plots_n_taxa.png`: a PNG figure with the partial plots of the variables explaining the number of taxa recorded in iNaturalist in a country.  
-                     
-  - `variable_importance_n_records.png`: a PNG figure with variable importance plots showing the contribution of variables to explain the number of records in iNaturalist in a country. 
-  - `variable_importance_p_gbif.png`: a PNG figure with variable importance plots showing the contribution of variables to explain the proportion of records from iNaturalist on GBIF in a country.
-  - `variable_importance_n_users.png`: a PNG figure with variable importance plots showing the contribution of variables to explain the number of users recording in iNaturalist in a country. 
-  - `variable_importance_n_taxa.png`: a PNG figure with variable importance plots showing the contribution of variables to explain the number of taxa recorded in iNaturalist in a country.
+**Identity**
+- `country_name`: Country name in English
+- `country_code`: ISO two-letter country code
+- `region`: Geographic region
+- `flag`: Flag emoji
+- `place_id`: Place identifier on iNaturalist
 
-## **Documents**
+**iNaturalist Network node** *(where applicable)*
+- `node_name`: Name of the iNaturalist Network node
+- `node_id`: ID of the iNaturalist Network node
+- `node_type`: Institution type of the node
+- `node_year`: Year the node was created
+- `has_node`: Whether the country has a node in the iNaturalist Network
+- `neighbour_has_node`: Whether a neighbouring country has a node
 
-  - `poster_LivingData.pdf`: a PDF with the poster to be presented in the Living Data Conference in Bogotá (https://www.livingdata2025.com/posters.html?poster=7020814).   
+**iNaturalist activity**
+- `n_records`: Number of observations
+- `n_users`: Number of users who have submitted observations
+- `n_taxa`: Number of taxa recorded
+- `n_projects`: Number of projects created
+- `n_literature`: Number of peer-reviewed articles that use iNaturalist data according to GBIF
+- `p_research_grade`: Proportion of observations that reached Research Grade
 
-## LICENCE
+**Socioeconomic and geographic context**
+- `area`: Area (km²)
+- `population`: Population (number of inhabitants)
+- `gdp_per_capita`: GDP per capita (USD)
+- `gdp_in_research`: Research and development (R&D) expenditure (% of GDP)
+- `latitude`: Latitude of the geographic centroid (proxy for biodiversity richness)
+- `iucn_species`: Number of species according to the IUCN Red List (assessed or a country)
 
-**Data** are available under the terms of the Creative Commons Attribution 4.0 International licence CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/legalcode.en).   
+## Figures
 
-**Code** is available under the terms of the GPL-3.0 licence (https://www.gnu.org/licenses/gpl-3.0.html). 
+Each response variable has two associated figures: **partial plots** (showing the relationship between each predictor and the response) and **variable importance plots** (showing each predictor's relative contribution to the model).
 
-## CITATION
+| Response variable | Partial plots | Variable importance |
+|---|---|---|
+| Number of records | `partial_plots_n_records.png` | `variable_importance_n_records.png` |
+ `variable_importance_p_research_grade.png` |
+| Number of users | `partial_plots_n_users.png` | `variable_importance_n_users.png` |
+| Number of species | `partial_plots_n_species.png` | `variable_importance_n_species.png` |
+| Number of projects | `partial_plots_n_projects.png` | `variable_importance_n_projects.png` |
+| Number of literature records | `partial_plots_n_literature.png` | `variable_importance_n_literature.png` |
+| Proportion of observations that reached Research Grade | `partial_plots_p_research_grade.png` |
 
-> Grattarola F., Almaraz M., Galindo-Leal C., Mesaglio T., Meurk C.D., Newman P., Roget L., Soto-Vargas C., Tiago P. (2025) Growing global, empowered locally: the importance of the iNaturalist network. [Data/Code]
+Other figures
 
+| File | Description |
+|---|---|---|
+| `hist_response_variables.png` | Histograms of the 6 response variables |
+| `hist_explanatory_variables.png` | Histograms of the 8 explanatory variables |
+| `timeline_nodes.png.png` | Timeline of the creation of each node in the network and the type of organisation behind it (government, NGO, university, or museum) |
+| `time_series_nodes.png.png` | Time series showing the number of records per year (from 2011 to 2025) for each country in the network (including the year it was created), compared to all countries |
+
+## Documents
+
+  - `poster_LivingData.pdf`: Poster presented at the Living Data Conference 2025, Bogotá (<https://www.livingdata2025.com/posters.html?poster=7020814>)
+
+
+## Citation
+
+> Grattarola F., Almaraz M., Callaghan C., Keil P., Lin C.-T., Mesaglio T., Monge Velázquez M., Ponce Juárez G.E., Soto Vargas C., Tiago P., Turunen A. (2026) The impact of nationally organised efforts on global citizen-science platforms. [Data/Code]
+
+## License
+
+**Data** are released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/legalcode.en).  
+**Code** is released under [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html).  
