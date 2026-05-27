@@ -10,7 +10,7 @@ sf_use_s2(FALSE)
 library(tidyverse)  
 
 token <- Sys.getenv('IUCN_REDLIST_KEY')
-source('R/variables_per_country.R')
+source('R/funs_download_data.R')
 
 inat_network <- read_csv('data/inat_nodes.csv')
 
@@ -37,7 +37,7 @@ data_variables_EastAsiaPacific <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_EastAsiaPacific, 
-        'data/data_variables_EastAsiaPacific.rds')
+        'data/archive/data_variables_EastAsiaPacific.rds')
 
 ########################################################################
 
@@ -50,7 +50,7 @@ data_variables_EuropeCentralAsia <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_EuropeCentralAsia, 
-        'data/EuropeCentralAsia_data_variables.rds')
+        'data/archive/EuropeCentralAsia_data_variables.rds')
 
 ########################################################################
 
@@ -63,7 +63,7 @@ data_variables_LatinAmericaCaribbean <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_LatinAmericaCaribbean, 
-        'data/LatinAmericaCaribbean_data_variables.rds')
+        'data/archive/LatinAmericaCaribbean_data_variables.rds')
 
 ########################################################################
 
@@ -76,7 +76,7 @@ data_variables_MiddleEastNorthAfrica <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_MiddleEastNorthAfrica, 
-        'data/MiddleEastNorthAfrica_data_variables.rds')
+        'data/archive/MiddleEastNorthAfrica_data_variables.rds')
 
 
 ########################################################################
@@ -90,7 +90,7 @@ data_variables_NorthAmerica <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_NorthAmerica, 
-        'data/NorthAmerica_data_variables.rds')
+        'data/archive/NorthAmerica_data_variables.rds')
 
 ########################################################################
 
@@ -103,7 +103,7 @@ data_variables_SouthAsia <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_SouthAsia, 
-        'data/SouthAsia_data_variables.rds')
+        'data/archive/SouthAsia_data_variables.rds')
 
 ########################################################################
 
@@ -116,7 +116,7 @@ data_variables_SubSaharanAfrica <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_SubSaharanAfrica, 
-        'data/SubSaharanAfrica_data_variables.rds')
+        'data/archive/SubSaharanAfrica_data_variables.rds')
 
 ########################################################################
 ########################################################################
@@ -131,7 +131,7 @@ variables_global <- bind_rows(data_variables_EastAsiaPacific,
   mutate(has_node = ifelse(!is.na(node_name), 1, 0)) %>% 
   relocate(has_node, .before = neighbour_has_node)
 
-saveRDS(variables_global, 'data/Global_data_variables.rds')
+saveRDS(variables_global, 'data/archive/Global_data_variables.rds')
 
 ########################################################################
 # 2) Check for individual cases in which the iNat download may have failed
@@ -170,7 +170,7 @@ unmatched %>%
 
 
 # get a list of all place_id on iNat (from: http://www.inaturalist.org/places/inaturalist-places.csv.zip)
-inat_place_id <- read_csv('data/inaturalist-places.csv') %>% 
+inat_place_id <- read_csv('data/inat_places.csv') %>% 
   filter(admin_level == 0)
 
 # go one by one and find the place_id for the unmatched country names
@@ -316,4 +316,4 @@ variables_global <- variables_global %>%
 # Store the final dataset
 ########################################################################
 
-saveRDS(variables_global, 'data/Global_data_variables.rds')
+saveRDS(variables_global, 'data/archive/Global_data_variables.rds')
