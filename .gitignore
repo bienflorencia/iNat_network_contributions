@@ -8,3 +8,5 @@
 
 **/*.quarto_ipynb
 figs/figure_preparation.svg
+/R/_draft
+/data/archive
