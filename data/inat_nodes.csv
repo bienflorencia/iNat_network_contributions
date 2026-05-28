@@ -1,22 +1,22 @@
 ﻿node_country,node_name,node_id,node_type,node_year
 Mexico,iNaturalistMX,2,NGO,2013
 New Zealand,iNaturalistNZ,3,NGO,2014
-Canada,iNaturalist.ca,5,government,2015
-Colombia,NaturalistaCO,6,government,2015
+Canada,iNaturalist.ca,5,governmental organisation,2015
+Colombia,NaturalistaCO,6,governmental organisation,2015
 Portugal,BioDiversity4All,8,NGO,2017
-Australia,iNaturalistAU,9,government,2017
-Panama,iNaturalistPa,13,government,2019
-Ecuador,iNaturalistEc,14,government,2019
+Australia,iNaturalistAU,9,governmental organisation,2017
+Panama,iNaturalistPa,13,governmental organisation,2019
+Ecuador,iNaturalistEc,14,governmental organisation,2019
 Israel,iNaturalistil,15,university,2019
 Argentina,ArgentiNat,16,NGO,2019
-Costa Rica,NaturalistaCR,17,government,2019
-Chile,iNaturalistCL,18,government,2019
+Costa Rica,NaturalistaCR,17,governmental organisation,2019
+Chile,iNaturalistCL,18,governmental organisation,2019
 Finland,iNaturalistFi,20,university,2020
 Sweden,iNaturalist.Se,21,university,2020
-Spain,Natusfera,22,government,2020
+Spain,Natusfera,22,governmental organisation,2020
 Greece,iNaturalistGR,23,NGO,2020
-Guatemala,iNaturalistGT,24,government,2020
-United Kingdom,iNaturalistUK,25,government,2021
+Guatemala,iNaturalistGT,24,governmental organisation,2020
+United Kingdom,iNaturalistUK,25,governmental organisation,2021
 Luxembourg,iNaturalist.LU,26,museum,2021
 Taiwan,iNaturalistTW,27,university,2022
 Uruguay,NaturalistaUY,28,NGO,2021
