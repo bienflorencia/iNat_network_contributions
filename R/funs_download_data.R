@@ -1,4 +1,6 @@
 ##################################################################
+# AUXILIARY FUNCTION
+##################################################################
 #' Get the iNaturalist `place_id` for a country
 #'
 #' @param country_name A country name in English
@@ -43,7 +45,8 @@ getCountryiNatPlaceID <- function(country_name,
 }
 
 ##################################################################
-
+# GBIF API FUNCTIONS
+##################################################################
 #' Get the number of occurrence records in GBIF for a country
 #'
 #' Retrieves the total number of georeferenced occurrence records in GBIF, and
@@ -103,7 +106,6 @@ getGBIFrecordsPerCountry <- function(list_of_country_codes,
 }
 
 ##################################################################
-
 #' Get the number of peer-reviewed publications citing iNaturalist data for a country
 #'
 #' Retrieves the total number of peer-reviewed publications indexed in the GBIF
@@ -174,8 +176,87 @@ getGBIFcitationsPerCountry <- function(list_of_country_codes,
   return(results)
 }
 
-##################################################################
+#' Get the number of peer-reviewed publications citing iNaturalist data for a country, by year
+#'
+#' Retrieves the total number of peer-reviewed publications indexed in the GBIF
+#' Literature Registry that use iNaturalist occurrence data with a documented
+#' geographic focus on a given country, via the GBIF Literature API for a give year
+#' (`countriesOfCoverage` parameter, filtered by the iNaturalist dataset key).
+#'
+#' @param list_of_country_codes A character string or vector of ISO 3166-1 alpha-2 country codes
+#' @param years A numeric vector of years to retrieve. Default is `2011:2026`
+#' @param verbose Logical. If `TRUE`, prints progress messages. Default is `FALSE`
+#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is `2`
+#'
+#' @returns A tibble with columns: `country_code` (ISO 3166-1 alpha-2 code) and
+#'   `n_literature` (number of peer-reviewed publications in the GBIF Literature Registry
+#'   that use iNaturalist data with a geographic focus on the country in that year)
+#' @export
+#'
+#' @examples
+#' getGBIFcitationsPerCountryYear('UY')
+#' getGBIFcitationsPerCountryYear(c('AR', 'BR', 'PY'))
+#' getGBIFcitationsPerCountryYear('Uruguay', years = 2020:2022)
+getGBIFcitationsPerCountryYear <- function(list_of_country_codes,
+                                       years      = 2011:2026,
+                                       verbose     = FALSE,
+                                       sleep_time  = 2) {
+  
+  iNatKey  <- '50c9509d-22c7-4a22-a47d-8c48425ef4a7'
+  base_url <- 'https://api.gbif.org/v1/literature/search?'
+  n_calls <- 0
+  
+  results <- tibble(country_code = character(),
+                    year           = numeric(),
+                    n_literature = numeric())
+  
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_code, '\n')
+    }
+    
+    for(year in years){
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      call_url <- str_glue('{base_url}countriesOfCoverage={country_code}&gbifDatasetKey={iNatKey}&year={year}')
+      response <- HEAD(call_url)
+      
+      if (status_code(response) == 200) {
+        response <- GET(url = URLencode(call_url)) %>%
+          content(as = 'text', encoding = 'UTF-8') %>% fromJSON(flatten = TRUE)
+        
+        n_lit <- as.numeric(response$count)
+      } else {
+        print('Country not found.')
+        n_lit <- NA
+      }
+      
+      results <- add_row(results,
+                         country_code = country_code,
+                         year = year,
+                         n_literature = n_lit) 
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  return(results)
+}
 
+##################################################################
+# iNaturalist API FUNCTIONS
+##################################################################
 #' Get the number of verifiable observations on iNaturalist for a country
 #'
 #' @param list_of_country_names A character string or vector of country names in English
@@ -289,7 +370,6 @@ getiNatRecordsPerPlaceID <- function(list_of_place_ids,
 }
 
 ##################################################################
-
 #' Get the number of verifiable observations uploaded on iNaturalist for a country, by year
 #'
 #' @param list_of_country_names A character string or vector of country names in English
@@ -299,21 +379,6 @@ getiNatRecordsPerPlaceID <- function(list_of_place_ids,
 #'
 #' @returns A tibble with columns: `country_name`, `year`, and `n_records_inat`
 #'   (total number of verifiable observations on iNaturalist uploaded within the country in that year)
-#' @export
-#'
-#' @examples
-#' getiNatRecordsPerCountryYear('Uruguay')
-#' getiNatRecordsPerCountryYear(c('Brazil', 'Argentina'))
-#' getiNatRecordsPerCountryYear('Uruguay', years = 2015:2020)
-#' Get the number of verifiable observations on iNaturalist for a country, by year
-#'
-#' @param list_of_country_names A character string or vector of country names in English
-#' @param years A numeric vector of years to retrieve. Default is \code{2011:2026}
-#' @param verbose Logical. If \code{TRUE}, prints progress messages. Default is \code{FALSE}
-#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is \code{10}
-#'
-#' @returns A tibble with columns: \code{country_name}, \code{year}, and \code{n_records_inat}
-#'   (total number of verifiable observations on iNaturalist within the country in that year)
 #' @export
 #'
 #' @examples
@@ -375,6 +440,62 @@ getiNatRecordsPerCountryYear <- function(list_of_country_names,
     }
   }
 
+  return(results)
+}
+
+getiNatRecordsPerPlaceIDYear <- function(list_of_place_ids,
+                                         years      = 2011:2026,
+                                         verbose    = FALSE,
+                                         sleep_time = 10) {
+  
+  results <- tibble(place_id   = numeric(),
+                    year       = numeric(),
+                    n_records = numeric())
+  
+  api     <- 'https://api.inaturalist.org/v1'
+  n_calls <- 0
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', place_id, '\n')
+    }
+    
+    for (year in years) {
+      
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_observations <- str_glue('{api}/observations?verifiable=true&place_id={place_id}&created_year={year}')
+        
+        get_json_call_observations <- GET(url = call_url_observations) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_obs <- get_json_call_observations$total_results
+      } else {
+        n_obs <- NA
+      }
+      
+      results <- add_row(results,
+                         place_id   = place_id,
+                         year       = year,
+                         n_records = n_obs)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  
   return(results)
 }
 
@@ -507,8 +628,148 @@ getiNatResearchPropPerPlaceID <- function(list_of_place_ids,
   return(results)
 }
 
-##################################################################
+#' Get the proportion of iNaturalist observations reaching Research Grade for a country, by year
+#'
+#' @param list_of_country_names A character string or vector of country names in English
+#' @param years A numeric vector of years to retrieve. Default is `2011:2026`
+#' @param verbose Logical. If `TRUE`, prints progress messages. Default is `FALSE`
+#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is `10`
+#'
+#' @returns A tibble with columns: `country_name` and `p_research_grade`
+#'   (proportion of verifiable iNaturalist observations in the country that have reached Research Grade quality in that year)
+#' @export
+#'
+#' @examples
+#' getiNatResearchPropPerCountryYear('Uruguay')
+#' getiNatResearchPropPerCountryYear(c('Brazil', 'Argentina'))
+#' getiNatResearchPropPerCountryYear('Uruguay', years = 2020:2022)
+getiNatResearchPropPerCountryYear <- function(list_of_country_names,
+                                              years      = 2011:2026,
+                                              verbose    = FALSE,
+                                              sleep_time = 10) {
+  
+  results <- tibble(country_name     = character(),
+                    year = numeric(),
+                    p_research_grade = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1'
+  n_calls <- 0
+  page <- '&page=1&per_page=1'
+  
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_name, '\n')
+    }
+    
+    place_id <- getCountryiNatPlaceID(country_name)
+    
+    for(year in years) {
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_observations <- str_glue('{api}/observations?verifiable=true&place_id={place_id}&created_year={year}&{page}')
+        call_url_research_grade <- str_glue('{api}/observations?verifiable=true&quality_grade=research&place_id={place_id}&created_year={year}&{page}')
+        
+        get_json_call_observations <- GET(url = call_url_observations) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        get_json_call_research_grade <- GET(url = call_url_research_grade) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_obs <- get_json_call_observations$total_results
+        n_obs_research <- get_json_call_research_grade$total_results
+      } else {
+        n_obs <- NA
+        n_obs_research <- NA
+      }
+    
+    results <- add_row(results,
+                       country_name   = country_name,
+                       year           = year,
+                       p_research_grade = n_obs_research / n_obs)
 
+    ## ---- sleep ----
+    n_calls <- n_calls + 1
+    if (n_calls %% 5 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+      Sys.sleep(sleep_time)
+      }
+    }
+  }
+  return(results)
+}
+
+
+getiNatResearchPropPerPlaceIDYear <- function(list_of_place_ids,
+                                              years      = 2011:2026,
+                                              verbose    = FALSE,
+                                              sleep_time = 10) {
+  
+  results <- tibble(place_id = numeric(),
+                    year = numeric(),
+                    p_research_grade = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1'
+  n_calls <- 0
+  page <- '&page=1&per_page=1'
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', place_id, '\n')
+    }
+    
+    for(year in years) {
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_observations <- str_glue('{api}/observations?verifiable=true&place_id={place_id}&created_year={year}&page')
+        Sys.sleep(5)
+        call_url_research_grade <- str_glue('{api}/observations?verifiable=true&quality_grade=research&place_id={place_id}&created_year={year}&page')
+        
+        get_json_call_observations <- GET(url = call_url_observations) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        get_json_call_research_grade <- GET(url = call_url_research_grade) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_obs <- get_json_call_observations$total_results
+        n_obs_research <- get_json_call_research_grade$total_results
+      } else {
+        n_obs <- NA
+        n_obs_research <- NA
+      }
+      
+      results <- add_row(results,
+                         place_id   = place_id,
+                         year       = year,
+                         p_research_grade = n_obs_research / n_obs)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 5 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  return(results)
+}
+
+
+##################################################################
 #' Get the number of observers on iNaturalist for a country
 #'
 #' @param list_of_country_names A character string or vector of country names in English
@@ -622,7 +883,135 @@ getiNatUsersPerPlaceID <- function(list_of_place_ids,
 }
 
 ##################################################################
+#' Get the number of observers on iNaturalist for a country, by year
+#'
+#' @param list_of_country_names A character string or vector of country names in English
+#' @param years A numeric vector of years to retrieve. Default is `2011:2026`
+#' @param verbose Logical. If `TRUE`, prints progress messages. Default is `FALSE`
+#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is `10`
+#'
+#' @returns A tibble with columns: `country_name` and `n_users`
+#'   (number of unique observers who have submitted verifiable observations on iNaturalist in the country in that year)
+#' @export
+#'
+#' @examples
+#' getiNatUsersPerCountryYear('Uruguay')
+#' getiNatUsersPerCountryYear(c('Brazil', 'Argentina'))
+#' getiNatUsersPerCountryYear('Uruguay', years = 2020:2022)
+getiNatUsersPerCountryYear <- function(list_of_country_names,
+                                       years      = 2011:2026,
+                                       verbose       = FALSE,
+                                       sleep_time    = 10) {
+  
+  results <- tibble(country_name = character(),
+                    year           = numeric(),
+                    n_users      = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1/observations/observers'
+  n_calls <- 0
+  
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_name, '\n')
+    }
+    
+    place_id <- getCountryiNatPlaceID(country_name)
+    
+    for(year in years){
+      
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_observations <- str_glue('{api}?verifiable=true&place_id={place_id}&created_year={year}')
+        get_json_call_observations <- GET(url = call_url_observations) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_users <- get_json_call_observations$total_results
+      } else {
+        n_users <- NA
+      }
+      
+      results <- add_row(results,
+                         country_name   = country_name,
+                         year           = year,
+                         n_users      = n_users)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
 
+  return(results)
+}
+
+getiNatUsersPerPlaceIDYear <- function(list_of_country_names,
+                                       years      = 2011:2026,
+                                       verbose       = FALSE,
+                                       sleep_time    = 10) {
+  
+  results <- tibble(place_id = numeric(),
+                    year           = numeric(),
+                    n_users      = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1/observations/observers'
+  n_calls <- 0
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', place_id, '\n')
+    }
+    
+    for(year in years){
+      
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_observations <- str_glue('{api}?verifiable=true&place_id={place_id}&created_year={year}')
+        get_json_call_observations <- GET(url = call_url_observations) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_users <- get_json_call_observations$total_results
+      } else {
+        n_users <- NA
+      }
+      
+      results <- add_row(results,
+                         place_id   = place_id,
+                         year           = year,
+                         n_users      = n_users)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  
+  return(results)
+}
+
+
+##################################################################
 #' Get the number of species recorded on iNaturalist for a country
 #'
 #' @param list_of_country_names A character string or vector of country names in English
@@ -737,7 +1126,133 @@ getiNatSpeciesPerPlaceID <- function(list_of_place_ids,
 }
 
 ##################################################################
+#' Get the number of species recorded on iNaturalist for a country, by year
+#'
+#' @param list_of_country_names A character string or vector of country names in English
+#' @param years A numeric vector of years to retrieve. Default is `2011:2026`
+#' @param verbose Logical. If `TRUE`, prints progress messages. Default is `FALSE`
+#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is `10`
+#'
+#' @returns A tibble with columns: `country_name` and `n_species`
+#'   (number of distinct species with at least one verifiable observation on iNaturalist in the country in that year; excludes higher-rank taxa and ancestors)
+#' @export
+#'
+#' @examples
+#' getiNatSpeciesPerCountryYear('Uruguay')
+#' getiNatSpeciesPerCountryYear(c('Brazil', 'Argentina'))
+#' getiNatSpeciesPerCountryYear('Uruguay', years = 2020:2022)
+getiNatSpeciesPerCountryYear <- function(list_of_country_names,
+                                     years      = 2011:2026,
+                                     verbose       = FALSE,
+                                     sleep_time    = 10) {
+  
+  results <- tibble(country_name = character(),
+                    year           = numeric(),
+                    n_species    = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1/observations/species_counts'
+  n_calls <- 0
+  
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_name, '\n')
+    }
+    
+    place_id <- getCountryiNatPlaceID(country_name)
+    
+    for(year in years){
+      
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_observations <- str_glue('{api}?verifiable=true&place_id={place_id}&rank=species&include_ancestors=false&created_year={year}')
+        get_json_call_observations <- GET(url = call_url_observations) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_species <- get_json_call_observations$total_results
+      } else {
+        n_species <- NA
+      }
+      
+      results <- add_row(results,
+                         country_name   = country_name,
+                         year           = year,
+                         n_species      = n_species)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  return(results)
+}
 
+getiNatSpeciesPerPlaceIDYear <- function(list_of_place_ids,
+                                         years      = 2011:2026,
+                                         verbose       = FALSE,
+                                         sleep_time    = 10) {
+  
+  results <- tibble(place_id = numeric(),
+                    year           = numeric(),
+                    n_species    = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1/observations/species_counts'
+  n_calls <- 0
+  
+  for (i in seq_along(list_of_place_ids)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_name, '\n')
+    }
+
+    for(year in years){
+      
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_observations <- str_glue('{api}?verifiable=true&place_id={place_id}&rank=species&include_ancestors=false&created_year={year}')
+        get_json_call_observations <- GET(url = call_url_observations) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_species <- get_json_call_observations$total_results
+      } else {
+        n_species <- NA
+      }
+      
+      results <- add_row(results,
+                         place_id   = place_id,
+                         year           = year,
+                         n_species      = n_species)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  return(results)
+}
+
+
+##################################################################
 #' Get the number of iNaturalist projects associated with a country
 #'
 #' @param list_of_country_names A character string or vector of country names in English
@@ -851,9 +1366,226 @@ getiNatProjectsPerPlaceID <- function(list_of_place_ids,
 }
 
 ##################################################################
-##################################################################
-##################################################################
+#' Get the number of iNaturalist projects associated with a country, by year
+#'
+#' @param list_of_country_names A character string or vector of country names in English
+#' @param years A numeric vector of years to retrieve. Default is `2011:2026`
+#' @param verbose Logical. If `TRUE`, prints progress messages. Default is `FALSE`
+#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is `10`
+#'#'
+#' @returns A tibble with columns: `country_name` and `n_projects`
+#'   (number of iNaturalist projects in the country in that year)
+#' @export
+#'
+#' @examples
+#' getiNatProjectsPerCountryYear('Uruguay')
+#' getiNatProjectsPerCountryYear(c('Brazil', 'Argentina'))
+#' getiNatProjectsPerCountryYear('Uruguay', years = 2015:2020)
+getiNatProjectsPerCountryYear <- function(list_of_country_names,
+                                          years      = 2011:2026,
+                                          verbose       = FALSE,
+                                          sleep_time    = 10) {
+  
+  results <- tibble(country_name = character(),
+                    year = numeric(),
+                    n_projects   = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1'
+  n_calls <- 0
+  
+  for (i in seq_along(list_of_country_names)) {
+    
+    country_name <- list_of_country_names[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_name, '\n')
+    }
+    
+    place_id <- getCountryiNatPlaceID(country_name)
+    
+    for (year in years) {
+      
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
 
+      if (!is.na(place_id)) {
+        call_url_projects <- str_glue('{api}/projects?place_id={place_id}')
+        get_json_call_projects <- GET(url = call_url_projects) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_proj <- get_json_call_projects$total_results
+      } else {
+        n_proj <- NA
+      }
+      
+      results <- add_row(results,
+                         country_name   = country_name,
+                         year           = year,
+                         n_projects = n_proj)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  return(results)
+}
+
+
+getiNatProjectsPerPlaceIDYear <- function(list_of_place_ids,
+                                          years      = 2011:2026,
+                                          verbose       = FALSE,
+                                          sleep_time    = 10) {
+  
+  results <- tibble(place_id = numeric(),
+                    year = numeric(),
+                    n_projects   = numeric())
+  
+  api  <- 'https://api.inaturalist.org/v1'
+  n_calls <- 0
+  
+  for (i in seq_along(list_of_country_names)) {
+    
+    place_id <- list_of_place_ids[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_name, '\n')
+    }
+    
+    for (year in years) {
+      
+      if (verbose) {
+        cat('  Year:', year, '\n')
+      }
+      
+      if (!is.na(place_id)) {
+        call_url_projects <- str_glue('{api}/projects?place_id={place_id}')
+        get_json_call_projects <- GET(url = call_url_projects) %>%
+          content(as = "text") %>% fromJSON(flatten = TRUE)
+        
+        n_proj <- get_json_call_projects$total_results
+      } else {
+        n_proj <- NA
+      }
+      
+      results <- add_row(results,
+                         place_id   = place_id,
+                         year       = year,
+                         n_projects = n_proj)
+      
+      ## ---- sleep ----
+      n_calls <- n_calls + 1
+      if (n_calls %% 10 == 0) {
+        if (verbose) {
+          cat('Sleeping for', sleep_time, 'seconds...\n')
+        }
+        Sys.sleep(sleep_time)
+      }
+    }
+  }
+  return(results)
+}
+
+##################################################################
+##################################################################
+# World Bank API
+##################################################################
+##################################################################
+## ---- shared internal helper (not meant to be called directly) ----
+## Fetches a single World Bank indicator for a vector of country codes.
+## Handles retries on both transport errors and malformed/unexpected JSON
+## (the World Bank API sometimes returns an XML error page with a 200 status).
+.getWorldBankIndicator <- function(list_of_country_codes,
+                                   indicator,
+                                   value_col_name,
+                                   verbose       = FALSE,
+                                   return_vector = FALSE,
+                                   sleep_time    = 1,
+                                   max_tries     = 5) {
+  
+  api    <- 'https://api.worldbank.org/v2/en/country/'
+  format <- '?mrv=1&format=json'
+  
+  safe_get_json <- function(url, max_tries = 5) {
+    
+    for (attempt in seq_len(max_tries)) {
+      
+      resp <- tryCatch(
+        request(url) %>%
+          # req_user_agent("myAnalysisScript/1.0 (myemail@example.com)") %>%
+          req_timeout(30) %>%
+          req_perform(),
+        error = function(e) {
+          if (verbose) message("    Attempt ", attempt, " failed (transport error): ", conditionMessage(e))
+          NULL
+        }
+      )
+      
+      if (!is.null(resp)) {
+        parsed <- tryCatch(
+          resp_body_json(resp, simplifyVector = TRUE),
+          error = function(e) {
+            if (verbose) message("    Attempt ", attempt, " failed (invalid JSON body)")
+            NULL
+          }
+        )
+        
+        if (!is.null(parsed)) return(parsed)
+      }
+      
+      if (attempt < max_tries) {
+        wait <- 2^attempt
+        if (verbose) message("    Retrying in ", wait, "s...")
+        Sys.sleep(wait)
+      }
+    }
+    
+    message("  Giving up on: ", url)
+    NULL
+  }
+  
+  results <- tibble(country_code = character(),
+                    value        = numeric())
+  
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
+    
+    if (verbose) cat('Fetching data for:', country_code, '\n')
+    
+    call_url <- paste0(api, country_code, '/indicator/', indicator, format)
+    
+    parsed_json <- safe_get_json(call_url, max_tries = max_tries)
+    
+    if (!is.null(parsed_json) && length(parsed_json) == 2) {
+      indicator_value <- as.numeric(parsed_json[[2]]$value)
+    } else {
+      indicator_value <- NA
+    }
+    
+    results <- add_row(results,
+                       country_code = country_code,
+                       value        = indicator_value)
+    
+    Sys.sleep(sleep_time)
+  }
+  
+  names(results)[names(results) == "value"] <- value_col_name
+  
+  if (return_vector) {
+    return(results[[value_col_name]])
+  }
+  return(results)
+}
+
+##################################################################
+##################################################################
 #' Get the total surface area of a country
 #'
 #' Retrieves the most recent value of the total surface area (km2) for one or more countries
@@ -875,51 +1607,15 @@ getiNatProjectsPerPlaceID <- function(list_of_place_ids,
 getAreaPerCountry <- function(list_of_country_codes,
                               verbose       = FALSE,
                               return_vector = FALSE,
-                              sleep_time    = 2) {
-  
-  results <- tibble(country_code = character(),
-                    area         = numeric())
-  
-  api       <- 'https://api.worldbank.org/v2/en/country/'
-  indicator <- 'AG.SRF.TOTL.K2'
-  format    <- '?mrv=1&format=json'
-  
-  for (i in seq_along(list_of_country_codes)) {
-    
-    country_code <- list_of_country_codes[i]
-    
-    if (verbose) {
-      cat('Fetching data for:', country_code, '\n')
-    }
-    
-    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
-    
-    get_json_call <- GET(url = call_url) %>%
-      content(as = "text") %>% fromJSON(flatten = TRUE)
-    
-    if (length(get_json_call) == 2) {
-      indicator_value <- as.numeric(get_json_call[[2]]$value)
-    } else {
-      indicator_value <- NA
-    }
-    
-    results <- add_row(results,
-                       country_code = country_code,
-                       area         = indicator_value)
-    
-    ## ---- sleep ----
-    if (i %% 10 == 0) {
-      if (verbose) {
-        cat('Sleeping for', sleep_time, 'seconds...\n')
-      }
-      Sys.sleep(sleep_time)
-    }
-  }
-  
-  if (return_vector) {
-    return(results$area)
-  }
-  return(results)
+                              sleep_time    = 1,
+                              max_tries     = 5) {
+  .getWorldBankIndicator(list_of_country_codes,
+                         indicator      = 'AG.SRF.TOTL.K2',
+                         value_col_name = 'area',
+                         verbose        = verbose,
+                         return_vector  = return_vector,
+                         sleep_time     = sleep_time,
+                         max_tries      = max_tries)
 }
 
 ######################################################################
@@ -944,55 +1640,18 @@ getAreaPerCountry <- function(list_of_country_codes,
 getPopulationPerCountry <- function(list_of_country_codes,
                                     verbose       = FALSE,
                                     return_vector = FALSE,
-                                    sleep_time    = 2) {
-  
-  results <- tibble(country_code = character(),
-                    population   = numeric())
-  
-  api       <- 'https://api.worldbank.org/v2/en/country/'
-  indicator <- 'SP.POP.TOTL'
-  format    <- '?mrv=1&format=json'
-  
-  for (i in seq_along(list_of_country_codes)) {
-    
-    country_code <- list_of_country_codes[i]
-    
-    if (verbose) {
-      cat('Fetching data for:', country_code, '\n')
-    }
-    
-    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
-    
-    get_json_call <- GET(url = call_url) %>%
-      content(as = "text") %>% fromJSON(flatten = TRUE)
-    
-    if (length(get_json_call) == 2) {
-      indicator_value <- as.numeric(get_json_call[[2]]$value)
-    } else {
-      indicator_value <- NA
-    }
-    
-    results <- add_row(results,
-                       country_code = country_code,
-                       population   = indicator_value)
-    
-    ## ---- sleep ----
-    if (i %% 10 == 0) {
-      if (verbose) {
-        cat('Sleeping for', sleep_time, 'seconds...\n')
-      }
-      Sys.sleep(sleep_time)
-    }
-  }
-  
-  if (return_vector) {
-    return(results$population)
-  }
-  return(results)
+                                    sleep_time    = 1,
+                                    max_tries     = 5) {
+  .getWorldBankIndicator(list_of_country_codes,
+                         indicator      = 'SP.POP.TOTL',
+                         value_col_name = 'population',
+                         verbose        = verbose,
+                         return_vector  = return_vector,
+                         sleep_time     = sleep_time,
+                         max_tries      = max_tries)
 }
 
 ######################################################################
-
 #' Get the GDP per capita of a country
 #'
 #' Retrieves the most recent GDP per capita (current USD) for one or more countries
@@ -1013,51 +1672,15 @@ getPopulationPerCountry <- function(list_of_country_codes,
 getGDPperCapitaPerCountry <- function(list_of_country_codes,
                                       verbose       = FALSE,
                                       return_vector = FALSE,
-                                      sleep_time    = 2) {
-  
-  results <- tibble(country_code    = character(),
-                    gdp_per_capita  = numeric())
-  
-  api       <- 'https://api.worldbank.org/v2/en/country/'
-  indicator <- 'NY.GDP.PCAP.CD'
-  format    <- '?mrv=1&format=json'
-  
-  for (i in seq_along(list_of_country_codes)) {
-    
-    country_code <- list_of_country_codes[i]
-    
-    if (verbose) {
-      cat('Fetching data for:', country_code, '\n')
-    }
-    
-    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
-    
-    get_json_call <- GET(url = call_url) %>%
-      content(as = "text") %>% fromJSON(flatten = TRUE)
-    
-    if (length(get_json_call) == 2) {
-      indicator_value <- as.numeric(get_json_call[[2]]$value)
-    } else {
-      indicator_value <- NA
-    }
-    
-    results <- add_row(results,
-                       country_code   = country_code,
-                       gdp_per_capita = indicator_value)
-    
-    ## ---- sleep ----
-    if (i %% 10 == 0) {
-      if (verbose) {
-        cat('Sleeping for', sleep_time, 'seconds...\n')
-      }
-      Sys.sleep(sleep_time)
-    }
-  }
-  
-  if (return_vector) {
-    return(results$gdp_per_capita)
-  }
-  return(results)
+                                      sleep_time    = 1,
+                                      max_tries     = 5) {
+  .getWorldBankIndicator(list_of_country_codes,
+                         indicator      = 'NY.GDP.PCAP.CD',
+                         value_col_name = 'gdp_per_capita',
+                         verbose        = verbose,
+                         return_vector  = return_vector,
+                         sleep_time     = sleep_time,
+                         max_tries      = max_tries)
 }
 
 ######################################################################
@@ -1083,55 +1706,20 @@ getGDPperCapitaPerCountry <- function(list_of_country_codes,
 getGDPinResearchPerCountry <- function(list_of_country_codes,
                                        verbose       = FALSE,
                                        return_vector = FALSE,
-                                       sleep_time    = 2) {
-  
-  results <- tibble(country_code    = character(),
-                    gdp_in_research = numeric())
-  
-  api       <- 'https://api.worldbank.org/v2/en/country/'
-  indicator <- 'GB.XPD.RSDV.GD.ZS'
-  format    <- '?mrv=1&format=json'
-  
-  for (i in seq_along(list_of_country_codes)) {
-    
-    country_code <- list_of_country_codes[i]
-    
-    if (verbose) {
-      cat('Fetching data for:', country_code, '\n')
-    }
-    
-    call_url <- str_glue('{api}{country_code}/indicator/{indicator}{format}')
-    
-    get_json_call <- GET(url = call_url) %>%
-      content(as = "text") %>% fromJSON(flatten = TRUE)
-    
-    if (length(get_json_call) == 2) {
-      indicator_value <- as.numeric(get_json_call[[2]]$value)
-    } else {
-      indicator_value <- NA
-    }
-    
-    results <- add_row(results,
-                       country_code    = country_code,
-                       gdp_in_research = indicator_value)
-    
-    ## ---- sleep ----
-    if (i %% 10 == 0) {
-      if (verbose) {
-        cat('Sleeping for', sleep_time, 'seconds...\n')
-      }
-      Sys.sleep(sleep_time)
-    }
-  }
-  
-  if (return_vector) {
-    return(results$gdp_in_research)
-  }
-  return(results)
+                                       sleep_time    = 1,
+                                       max_tries     = 5) {
+  .getWorldBankIndicator(list_of_country_codes,
+                         indicator      = 'GB.XPD.RSDV.GD.ZS',
+                         value_col_name = 'gdp_in_research',
+                         verbose        = verbose,
+                         return_vector  = return_vector,
+                         sleep_time     = sleep_time,
+                         max_tries      = max_tries)
 }
 
-########################################################################
-
+#############################################################################################################################################
+# Other metrics
+#############################################################################################################################################
 #' Get the latitude of a country's geographic centroid
 #'
 #' Computes the latitude of the geographic centroid of a country's polygon as a
@@ -1166,16 +1754,12 @@ getLatitudePerCountry <- function(list_of_country_codes,
                                              'iso2c',
                                              'country.name')
     
-    latitude <- try(rnaturalearth::ne_countries(country      = country_name,
-                                                returnclass  = 'sf') %>%
-                      st_make_valid(), silent = TRUE)
+    latitude <- suppressWarnings(try(rnaturalearthdata::countries50 %>% filter(iso_a2==country_code), silent = TRUE))
     
-    if (inherits(latitude, "try-error")) {
+    if (nrow(latitude)==0) {
       latitude_value <- NA
     } else {
-      latitude_value <- suppressWarnings(
-        sf::st_coordinates(sf::st_centroid(latitude$geometry))[1, 2]
-      )
+      latitude_value <- suppressWarnings(latitude$label_y)
     }
     
     results <- add_row(results,
@@ -1189,82 +1773,7 @@ getLatitudePerCountry <- function(list_of_country_codes,
   return(results)
 }
 
-########################################################################
-
-#' Get the number of species assessed by the IUCN Red List in a country
-#'
-#' Retrieves the number of species with an IUCN Red List threat assessment
-#' whose native range includes the given country (global scope, latest assessments only).
-#'
-#' @param api_key A valid IUCN Red List API token (see <https://api.iucnredlist.org>)
-#' @param list_of_country_codes A character string or vector of ISO 3166-1 alpha-2 country codes
-#' @param verbose Logical. If `TRUE`, prints progress messages. Default is `FALSE`
-#' @param return_vector Logical. If `TRUE`, returns a numeric vector instead of a tibble. Default is `FALSE`
-#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is `2`
-#'
-#' @returns A tibble with columns: `country_code` (ISO 3166-1 alpha-2 code) and
-#'   `iucn_species` (number of species assessed by the IUCN Red List in the country,
-#'   filtered to global scope (`scope_code=1`) and latest assessments only)
-#' @export
-#'
-#' @examples
-#' getNspeciesPerCountry(api_key = Sys.getenv('IUCN_REDLIST_KEY'), list_of_country_codes = 'UY')
-#' getNspeciesPerCountry(api_key = Sys.getenv('IUCN_REDLIST_KEY'), list_of_country_codes = c('AR', 'BR', 'PY'))
-getNspeciesPerCountry <- function(api_key,
-                                  list_of_country_codes,
-                                  verbose       = FALSE,
-                                  return_vector = FALSE,
-                                  sleep_time    = 2) {
-  
-  base_url <- "https://api.iucnredlist.org/api/v4"
-  endpoint <- "/countries"
-  headers  <- add_headers(Authorization = paste("Bearer", api_key))
-  
-  results <- tibble(country_code = character(),
-                    iucn_species = numeric())
-  
-  for (i in seq_along(list_of_country_codes)) {
-    
-    country_code <- list_of_country_codes[i]
-    
-    if (verbose) {
-      cat('Fetching data for:', country_code, '\n')
-    }
-    
-    api_url <- str_glue('{base_url}{endpoint}/{country_code}?latest=true&scope_code=1')
-    
-    response <- HEAD(api_url, headers)
-    
-    if (status_code(response) == 200) {
-      iucn_species <- as.numeric(response$headers$`total-count`)
-      
-      if (length(iucn_species) == 0) iucn_species <- NA
-    } else {
-      print("Country not found.")
-      iucn_species <- NA
-    }
-    
-    results <- add_row(results,
-                       country_code = country_code,
-                       iucn_species = iucn_species)
-    
-    ## ---- sleep ----
-    if (i %% 10 == 0) {
-      if (verbose) {
-        cat('Sleeping for', sleep_time, 'seconds...\n')
-      }
-      Sys.sleep(sleep_time)
-    }
-  }
-  
-  if (return_vector) {
-    return(results$iucn_species)
-  }
-  return(results)
-}
-
-########################################################################
-
+#######################################################################
 #' Check whether any neighbouring country has an iNaturalist Network node
 #'
 #' For each country, determines whether at least one of its land-border neighbours
@@ -1338,9 +1847,81 @@ getIfNeighboursHaveSite <- function(list_of_country_codes,
   return(results)
 }
 
-########################################################################
+#######################################################################
+#' Get the number of species assessed by the IUCN Red List in a country
+#'
+#' Retrieves the number of species with an IUCN Red List threat assessment
+#' whose native range includes the given country (global scope, latest assessments only).
+#'
+#' @param api_key A valid IUCN Red List API token (see <https://api.iucnredlist.org>)
+#' @param list_of_country_codes A character string or vector of ISO 3166-1 alpha-2 country codes
+#' @param verbose Logical. If `TRUE`, prints progress messages. Default is `FALSE`
+#' @param return_vector Logical. If `TRUE`, returns a numeric vector instead of a tibble. Default is `FALSE`
+#' @param sleep_time Numeric. Seconds to pause every 10 requests to avoid rate-limiting. Default is `2`
+#'
+#' @returns A tibble with columns: `country_code` (ISO 3166-1 alpha-2 code) and
+#'   `iucn_species` (number of species assessed by the IUCN Red List in the country,
+#'   filtered to global scope (`scope_code=1`) and latest assessments only)
+#' @export
+#'
+#' @examples
+#' getNspeciesPerCountry(api_key = Sys.getenv('IUCN_REDLIST_KEY'), list_of_country_codes = 'UY')
+#' getNspeciesPerCountry(api_key = Sys.getenv('IUCN_REDLIST_KEY'), list_of_country_codes = c('AR', 'BR', 'PY'))
+getNspeciesPerCountry <- function(api_key,
+                                  list_of_country_codes,
+                                  verbose       = FALSE,
+                                  return_vector = FALSE,
+                                  sleep_time    = 2) {
+  
+  base_url <- "https://api.iucnredlist.org/api/v4"
+  endpoint <- "/countries"
+  headers  <- add_headers(Authorization = paste("Bearer", api_key))
+  
+  results <- tibble(country_code = character(),
+                    iucn_species = numeric())
+  
+  for (i in seq_along(list_of_country_codes)) {
+    
+    country_code <- list_of_country_codes[i]
+    
+    if (verbose) {
+      cat('Fetching data for:', country_code, '\n')
+    }
+    
+    api_url <- str_glue('{base_url}{endpoint}/{country_code}?latest=true&scope_code=1')
+    
+    response <- HEAD(api_url, headers)
+    
+    if (status_code(response) == 200) {
+      iucn_species <- as.numeric(response$headers$`total-count`)
+      
+      if (length(iucn_species) == 0) iucn_species <- NA
+    } else {
+      print("Country not found.")
+      iucn_species <- NA
+    }
+    
+    results <- add_row(results,
+                       country_code = country_code,
+                       iucn_species = iucn_species)
+    
+    ## ---- sleep ----
+    if (i %% 10 == 0) {
+      if (verbose) {
+        cat('Sleeping for', sleep_time, 'seconds...\n')
+      }
+      Sys.sleep(sleep_time)
+    }
+  }
+  
+  if (return_vector) {
+    return(results$iucn_species)
+  }
+  return(results)
+}
 
-#' Retrieve all study variables for a set of countries
+#######################################################################
+########################################################################' Retrieve all study variables for a set of countries
 #'
 #' A wrapper that sequentially calls all variable-retrieval functions and returns
 #' a single tibble with one row per country and one column per variable.
@@ -1383,6 +1964,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                         verbose       = TRUE,
                                         return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 2/13\n')
   cat(' *** Proportion of records that reached Research Grade\n')
@@ -1391,6 +1973,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                                     verbose       = TRUE,
                                                     return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 3/13\n')
   cat(' *** Number of users on iNat\n')
@@ -1399,6 +1982,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                     verbose       = TRUE,
                                     return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 4/13\n')
   cat(' *** Number of taxa on iNat\n')
@@ -1407,6 +1991,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                         verbose       = TRUE,
                                         return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 5/13\n')
   cat(' *** Number of projects on iNat\n')
@@ -1415,6 +2000,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                           verbose       = TRUE,
                                           return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 6/13\n')
   cat(' *** Number of peer-reviewed papers in GBIF using iNat data\n')
@@ -1423,6 +2009,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                              verbose       = TRUE,
                                              return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 7/13\n')
   cat(' *** Area\n')
@@ -1431,6 +2018,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                             verbose       = TRUE,
                             return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 8/13\n')
   cat(' *** Population\n')
@@ -1439,6 +2027,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                         verbose       = TRUE,
                                         return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 9/13\n')
   cat(' *** GDP per capita\n')
@@ -1447,6 +2036,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                               verbose       = TRUE,
                                               return_vector = TRUE)
   Sys.sleep(20)
+  gc()
   cat('\n')
   cat('Downloading variable 10/13\n')
   cat(' *** % of GDP in research\n')
@@ -1455,12 +2045,14 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                                 verbose       = TRUE,
                                                 return_vector = TRUE)
   cat('\n')
+  gc()
   cat('Downloading variable 11/13\n')
   cat(' *** Latitude\n')
   latitude <- getLatitudePerCountry(df$country_code,
                                     verbose       = TRUE,
                                     return_vector = TRUE)
   cat('\n')
+  gc()
   cat('Downloading variable 12/13\n')
   cat(' *** Number of species according to IUCN\n')
   iucn_species <- getNspeciesPerCountry(api_key               = IUCN_token,
@@ -1468,6 +2060,7 @@ getCountryVariables <- function(df, IUCN_token, inat_nodes_names) {
                                         verbose               = TRUE,
                                         return_vector         = TRUE)
   cat('\n')
+  gc()
   cat('Downloading variable 13/13\n')
   cat(' *** Neighbour has a node in the iNat Network\n')
   neighbour_has_node <- getIfNeighboursHaveSite(list_of_country_codes = df$country_code,

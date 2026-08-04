@@ -1,16 +1,30 @@
 #| title: Data download
-#| date: 2026-04-04
+#| date: 2026-07-03
 #| author: Florencia Grattarola
 
-library(httr)
-library(jsonlite)
-library(knitr)
-library(sf)
-sf_use_s2(FALSE)
-library(tidyverse)  
+# library(httr)
+# library(httr2)
+# library(jsonlite)
+# library(knitr)
+# library(sf)
+# sf_use_s2(FALSE)
+# library(tidyverse)  
+
+library(httr2)     # request(), req_url_query(), req_user_agent(), req_throttle(), req_timeout(), req_perform(), resp_body_json()  -> iNaturalist + World Bank functions
+library(httr)       # GET(), HEAD(), content(), status_code(), add_headers()  -> GBIF, IUCN, and getCountryiNatPlaceID
+library(jsonlite)   # fromJSON()  -> GBIF/IUCN functions and getCountryiNatPlaceID
+library(dplyr)      # filter(), mutate(), select(), the %>% pipe
+library(tibble)     # tibble(), add_row(), as_tibble()
+library(stringr)    # str_glue()
+library(rgbif)      # occ_count()  -> getGBIFrecordsPerCountry
+library(countrycode) # countrycode()  -> getLatitudePerCountry, getIfNeighboursHaveSite
+library(rnaturalearth)     # ne_countries()  -> getIfNeighboursHaveSite
+library(rnaturalearthdata) # countries50  -> getLatitudePerCountry
+library(sf)         # st_touches()  -> getIfNeighboursHaveSite
+library(tidyverse)
 
 token <- Sys.getenv('IUCN_REDLIST_KEY')
-source('R/funs_download_data.R')
+source('R/funs_download_data_new.R')
 
 inat_network <- read_csv('data/inat_nodes.csv')
 
@@ -23,6 +37,25 @@ country_list <- countrycode::codelist_panel %>%
          flag = unicode.symbol) %>% 
   # merge with those that have node
   left_join(inat_network %>% rename(country_name=node_country))
+
+
+
+# variables_global
+start <- Sys.time()
+variables_global <- getCountryVariables(df = country_list,
+                            IUCN_token = token,
+                            inat_nodes_names = inat_network$node_country)
+
+end <- Sys.time()
+end-start
+
+
+variables_global <- variables_global %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0)) %>% 
+  relocate(has_node, .before = neighbour_has_node)
+
+saveRDS(variables_global, 'data/archive/Global_data_variables.rds')
+
 
 ########################################################################
 # 1) Download the data per region, to avoid API overflows
@@ -37,7 +70,7 @@ data_variables_EastAsiaPacific <- getCountryVariables(
   inat_nodes_names = inat_network$node_country)
 
 saveRDS(data_variables_EastAsiaPacific, 
-        'data/archive/data_variables_EastAsiaPacific.rds')
+        'data/archive/EastAsiaPacific_data_variable.rds')
 
 ########################################################################
 
@@ -51,6 +84,14 @@ data_variables_EuropeCentralAsia <- getCountryVariables(
 
 saveRDS(data_variables_EuropeCentralAsia, 
         'data/archive/EuropeCentralAsia_data_variables.rds')
+
+# Source - https://stackoverflow.com/a/36618034
+# Posted by Anup Tirpude, modified by community. See post 'Timeline' for change history
+# Retrieved 2026-07-04, License - CC BY-SA 3.0
+
+rm(list = ls())
+.rs.restartR()
+
 
 ########################################################################
 
@@ -89,8 +130,10 @@ data_variables_NorthAmerica <- getCountryVariables(
   IUCN_token = token,
   inat_nodes_names = inat_network$node_country)
 
-saveRDS(data_variables_NorthAmerica, 
-        'data/archive/NorthAmerica_data_variables.rds')
+# saveRDS(data_variables_NorthAmerica, 
+#         'data/archive/NorthAmerica_data_variables.rds')
+
+gc()
 
 ########################################################################
 
@@ -104,7 +147,7 @@ data_variables_SouthAsia <- getCountryVariables(
 
 saveRDS(data_variables_SouthAsia, 
         'data/archive/SouthAsia_data_variables.rds')
-
+gc()
 ########################################################################
 
 SubSaharanAfrica <- country_list %>% 
@@ -119,7 +162,7 @@ saveRDS(data_variables_SubSaharanAfrica,
         'data/archive/SubSaharanAfrica_data_variables.rds')
 
 ########################################################################
-########################################################################
+#######################################################################
 
 variables_global <- bind_rows(data_variables_EastAsiaPacific,
                               data_variables_EuropeCentralAsia, 
@@ -137,6 +180,7 @@ saveRDS(variables_global, 'data/archive/Global_data_variables.rds')
 # 2) Check for individual cases in which the iNat download may have failed
 ########################################################################
 # n_records, p_research_grade, n_users,n_species
+variables_global <- readRDS('data/archive/Global_data_variables.rds')
 
 # check if country names are found in iNat
 variables_global <- variables_global %>%
@@ -201,29 +245,32 @@ variables_global <- variables_global %>%
 unmatched_country_list <- variables_global %>% 
   filter(country_name %in% unmatched$country_name) 
 
-n_records <- getiNatRecordsPerPlaceID(unmatched_country_list$place_id, 
-                                      sleep_time = 10,
+unmatched_country_list <- variables_global %>% 
+  filter(place_id %in% c(7046, 7054, 10289, 9184, 8857, 8512, 7613, 6992, 8515, 9753, 10297, 10300, 10317, 7064, 10314, 7183, 1)) 
+
+n_records <- getiNatRecordsPerCountry(place_ids = unmatched_country_list$place_id, 
+                                      sleep_time = 1,
                                       verbose = T,
                                       return_vector = T)
 Sys.sleep(20)
-p_research_grade <- getiNatResearchPropPerPlaceID(unmatched_country_list$place_id, 
-                                                  sleep_time = 20,
+p_research_grade <- getiNatResearchPropPerCountry(place_ids = unmatched_country_list$place_id, 
+                                                  sleep_time = 1,
                                                   verbose = T,
                                                   return_vector = T)
 Sys.sleep(20)
-n_users <- getiNatUsersPerPlaceID(unmatched_country_list$place_id, 
-                                  sleep_time = 20,
+n_users <- getiNatUsersPerCountry(place_ids = unmatched_country_list$place_id, 
+                                  sleep_time = 1,
                                   verbose = T,
                                   return_vector = T)
 Sys.sleep(20)
-n_species <-  getiNatSpeciesPerPlaceID(unmatched_country_list$place_id, 
-                                 sleep_time = 20,
+n_species <-  getiNatSpeciesPerCountry(place_ids = unmatched_country_list$place_id, 
+                                 sleep_time = 1,
                                  verbose = T,
                                  return_vector = T)
 
 Sys.sleep(20)
-n_projects <- getiNatProjectsPerPlaceID(unmatched_country_list$place_id, 
-                                        sleep_time = 20,
+n_projects <- getiNatProjectsPerCountry(place_ids = unmatched_country_list$place_id, 
+                                        sleep_time = 1,
                                         verbose = T,
                                         return_vector = T)
 
@@ -260,29 +307,31 @@ variables_global <- left_join(variables_global,
 
 variables_global %>% 
   filter(is.na(latitude)) %>% 
-  drop_na(area, population, gdp_per_capita, gdp_in_research, n_species) %>% 
+  # drop_na(area, population, gdp_per_capita, gdp_in_research, n_species) %>% 
   select(country_name, country_code, n_records) %>% 
   print.data.frame()
 
-# find alternative names
-# rnaturalearth::ne_states() %>% filter(grepl('Mal', name)) %>% pull(name)
-# rnaturalearth::ne_countries() %>% filter(grepl('Tan', name)) %>% pull(sovereignt)
+#   country_name country_code n_records
+# 1       France           FR   7265947
+# 2       Norway           NO    515398
+# 3       Taiwan           TW   4930701
 
-# get latitude 
-latitude <- rnaturalearth::ne_states(iso_a2 = 'HK',
-                                     returnclass = 'sf') %>% st_make_valid()
-sf::st_coordinates(sf::st_centroid(latitude$geometry))[1,2]
-
-latitude <- rnaturalearth::ne_countries(country = 'United Republic of Tanzania',
-                                        returnclass = 'sf') %>% st_make_valid()
-sf::st_coordinates(sf::st_centroid(latitude$geometry))[1,2]
+rnaturalearth::ne_countries() %>% filter(grepl('France', name)) %>% pull(label_y)
+# [1] 46.69611
+rnaturalearth::ne_countries() %>% filter(grepl('Taiwan', name)) %>% pull(label_y)
+# [1] 23.65241
+rnaturalearth::ne_countries() %>% filter(grepl('Norway', name)) %>% pull(label_y)
+# [1] 61.35709
 
 # Sources
 # area, population, gdp_per_capita: Wikipedia
 # gdp_in_research: https://power.lowyinstitute.org/data/economic-capability/technology/rnd-spending-of-gdp/
-# latitude: rnaturaleart with different names
 
 variables_global <- variables_global %>% 
+  mutate(latitude = case_when(country_name == 'Taiwan' ~ 23.65241,
+                              country_name == 'France' ~ 46.69611,
+                              country_name == 'Norway' ~ 61.35709,
+                              TRUE ~ latitude)) %>% 
   mutate(area = case_when(country_name == 'Taiwan' ~ 36197,
                           TRUE ~ area)) %>% 
   mutate(population = case_when(country_name == 'Taiwan' ~  23396049,
@@ -293,27 +342,22 @@ variables_global <- variables_global %>%
                                      country_name == 'Bangladesh' ~ 0.4,
                                      country_name == 'North Korea' ~ 3.5,
                                      TRUE ~ gdp_in_research)) %>% 
-  mutate(latitude = case_when(country_name == 'Myanmar (Burma)' ~ 21.017,
-                              country_name == 'Bosnia & Herzegovina' ~ 44.18077,
-                              country_name == 'Serbia' ~ 44.23304,
-                              country_name == 'Singapore' ~ 1.347105,
-                              country_name == 'Trinidad & Tobago' ~ 10.42824,
-                              country_name == 'United States' ~ 45.70563,
-                              country_name == 'Congo - Brazzaville' ~ -0.8378011,
-                              country_name == 'Congo - Kinshasa' ~ -2.850276,
-                              country_name == 'Côte d’Ivoire' ~ 7.553755,
-                              country_name == 'Tanzania' ~ -6.257732,
-                              TRUE ~ latitude)) %>% 
   mutate(neighbour_has_node = case_when(country_name == 'Taiwan' ~ 0,
                                         country_name == 'France' ~ 1,
                                         country_name == 'Norway' ~ 1,
                                         TRUE ~ neighbour_has_node))
 
 variables_global <- variables_global %>% 
-  relocate(place_id, .after = 'flag')
+  relocate(place_id, .after = 'flag') 
+
+variables_global %>% 
+  drop_na(area, population, gdp_per_capita, gdp_in_research, iucn_species) %>% 
+  nrow()
+
 
 ########################################################################
 # Store the final dataset
 ########################################################################
 
 saveRDS(variables_global, 'data/archive/Global_data_variables.rds')
+write_csv(variables_global, 'data/data_global_variables.csv', na = '')
