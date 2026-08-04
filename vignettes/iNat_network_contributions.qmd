@@ -28,6 +28,11 @@ The aim of this report is to give an account of the importance of the iNaturalis
 #| message: false
 #| warning: false
 
+library(lme4)
+library(lmerTest)
+library(performance)
+library(sjPlot)
+library(ggeffects)
 library(future)
 library(doFuture)
 library(httr)
@@ -61,7 +66,7 @@ options(scipen=999)
 #| warning: false
 #| tbl-cap: 'Members of the iNaturalist Network. Shown in green are the sites from Latin America'
 
-inat_network <- read_csv('data/inat_nodes.csv')
+inat_network <- read_csv('data/inat_nodes.csv', na='')
 
 inat_network %>% 
   mutate('#'= row_number()) %>% relocate('#') %>% 
@@ -89,27 +94,31 @@ inat_network %>%
 ggplot(inat_network, aes(x = node_year, 
                          y = 0,          
                          label = node_country)) +
-  geom_point(aes(col = node_type), size = 3) +
-  scale_colour_manual(values = c('black', '#228a22', '#74AC00', '#b2b2b2ff')) +
+  # geom_point(aes(col = node_type), shape=6, size = 2, show.legend=F) +
+  # scale_colour_manual(values = c('black', '#228a22', '#74AC00', '#b2b2b2ff')) +
   scale_x_continuous(breaks = seq(2013, 2022, 1)) +
   geom_label_repel(
-    aes(colour = node_type),
+    aes(fill = node_type),
+    colour = 'white',
+    segment.colour = 'black',
+    segment.size = 0.5,
     min.segment.length = 0.1,
-    show.legend = FALSE,
+    # show.legend = FALSE,
     max.overlaps = Inf,
     direction = "y",          
-    nudge_y = 0.5,            
-    segment.size = 0.3
+    nudge_y = 0.5
   ) +
   scale_fill_manual(values = c('black', '#228a22', '#74AC00', '#b2b2b2ff')) +
-  labs(x = '', y = '', col = '') +
-  ggpubr::theme_pubclean() +
+  labs(x = '', y = '', fill = '') +
+  ggpubr::theme_classic2() +
   theme(
     legend.position = 'bottom',
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
     axis.line.y = element_blank()   
   )
+
+# plot_zoom_png?width=952&height=374
 ```
 
 ## Methods
@@ -147,57 +156,11 @@ We downloaded the data following
 #| message: false
 #| warning: false
 
-data_variables <- read_csv('data/data_global_variables.csv')
+data_variables <- read_csv('data/data_global_variables.csv', na = '')
 ```
+
 
 ## Summary of the data
-
-
-```{r}
-#| label: time-series
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-#| out-width: 100%
-#| fig-height: 5
-#| fig-width: 10
-
-data_temporal_records_network <- readRDS('data/data_global_time_series.csv')
-data_temporal_records_network <- left_join(data_variables, data_temporal_records_network) %>% 
-  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
-
-# split data into highlighted and background
-highlighted <- data_temporal_records_network %>%
-  filter(country_name %in% inat_network$node_country)
-
-node_years <- highlighted %>%
-  distinct(country_name, node_year)
-
-highlighted %>%
-  ggplot(aes(x = year, y = n_records_inat, colour = country_name)) +
-  # grey background lines (all countries, in every facet)
-  geom_line(
-    data = data_temporal_records_network %>% rename(country_name2 = country_name),
-    aes(group = country_name2),
-    colour = "grey80", linewidth = 0.4, alpha = 0.5
-  ) +
-  geom_line(colour = "#74AC00", linewidth = 1, show.legend = FALSE) +
-  geom_point(colour = "#74AC00", size = 1.5, show.legend = FALSE) +
-  geom_vline(
-    data = node_years,
-    aes(xintercept = node_year),
-    linetype = "dashed",
-    colour = "grey30",
-    linewidth = 0.5
-  ) +
-  scale_y_log10(labels = scales::label_comma()) +
-  facet_wrap(~ country_name, ncol = 7) +
-  labs(x = "", y = "Number of records (log scale)") +
-  ggpubr::theme_cleveland()
-
-```
-
 
 ```{r}
 #| label: summary-data
@@ -215,13 +178,13 @@ summary_data <- data_variables %>%
                      .default = 'Rest of the world')) %>%
   relocate(is_network) %>%
   group_by(is_network) %>% 
-  summarise(n_records = sum(n_records), 
-            n_users = sum(n_users), 
-            n_species = sum(n_species), 
-            n_projects = sum(n_projects), 
-            n_literature = sum(n_literature), 
-            p_research_grade_mean = round(mean(p_research_grade),3),
-            p_research_grade_sd = round(sd(p_research_grade),3))
+  summarise(n_records = sum(n_records, na.rm = T), 
+            n_users = sum(n_users, na.rm = T), 
+            n_species = sum(n_species, na.rm = T), 
+            n_projects = sum(n_projects, na.rm = T), 
+            n_literature = sum(n_literature, na.rm = T), 
+            p_research_grade_mean = round(mean(p_research_grade, na.rm = T),3),
+            p_research_grade_sd = round(sd(p_research_grade, na.rm = T),3))
 
 summary_data %>%
   mutate(perc_records = round(n_records*100/sum(n_records),1), .after = n_records) %>%
@@ -237,7 +200,7 @@ summary_data %>%
                                 'Publications', '(%)',
                                 'Proportion of RG', 'sd'),
                   digits=3, format.args = list(big.mark = ',')) %>% 
-  kableExtra::kable_material('striped') 
+  kableExtra::scroll_box()
 
   
 summary_plot_n_records <- ggplot(summary_data, aes(x=is_network)) +
@@ -1003,10 +966,11 @@ ggplot(data_variables %>% mutate(has_node = as.character(has_node)),
 #| warning: false
 #| out-width: 100%
 
-data_regressions <- data_variables %>% 
-  select(-c(country_name, region, flag, node_name, node_id, node_type, node_year, place_id)) %>% 
-  drop_na(area, population, gdp_per_capita, gdp_in_research, latitude, iucn_species) %>% 
+data_regressions <- data_variables %>%
+  select(-c(country_name, region, flag, node_name, node_id, node_type, node_year, place_id)) %>%
+  drop_na(area, population, gdp_per_capita, gdp_in_research, latitude, iucn_species) %>%
   filter(country_code != 'US')
+
 
 ###
 
@@ -1038,6 +1002,8 @@ data_regressions %>%
   select(area, population, gdp_per_capita,
          gdp_in_research, latitude, iucn_species) %>% pairs()
 ```
+
+Number of countries analysed: `r nrow(data_regressions)`.  
 
 ### Historgrams: response variables
 
@@ -1107,6 +1073,7 @@ plot_hist_n_literature <- ggplot(data_regressions, aes(x = n_literature)) +
 (plot_hist_n_records + plot_hist_p_research_grade) / (plot_hist_n_users + plot_hist_n_species) /
 (plot_hist_n_projects + plot_hist_n_literature)
 
+# save as 600x600
 ```
 
 
@@ -1124,14 +1091,14 @@ plot_hist_n_literature <- ggplot(data_regressions, aes(x = n_literature)) +
 plot_hist_has_node <- ggplot(data_regressions, aes(x = has_node)) +
   geom_histogram(fill = '#74ac00', bins = 20, show.legend = F) + 
   scale_x_continuous(breaks = c(0,1)) +
-  ylim(c(0,120)) +
+  ylim(c(0,130)) +
   labs(x = 'Has node', y = '') +
   ggpubr::theme_pubclean()
 
 plot_hist_neighbour_has_node <- ggplot(data_regressions, aes(x = neighbour_has_node)) +
   geom_histogram(fill = '#74ac00', bins = 20, show.legend = F) + 
   scale_x_continuous(breaks = c(0,1)) +
-  ylim(c(0,120)) +
+  ylim(c(0,130)) +
   labs(x = 'Neighbour has node', y = '') +
   ggpubr::theme_pubclean()
 
@@ -1193,6 +1160,7 @@ plot_hist_iucn_species <- ggplot(data_regressions, aes(x = iucn_species)) +
 (plot_hist_has_node + plot_hist_neighbour_has_node) / (plot_hist_population + plot_hist_area) /
 (plot_hist_gdp_per_capita + plot_hist_gdp_in_research) / (plot_hist_latitude + plot_hist_iucn_species)
 
+# save as 600x600
 ```
 
 
@@ -1313,460 +1281,29 @@ boxplot_n_literature <- ggplot(data_regressions %>%
 (boxplot_p_research + boxplot_n_projects + boxplot_n_literature)
 ```
 
-## Random forest
-
-### Standardise predictors and outcomes
-
-First log transform (`log10`) and then scale (mean zero).
+Are countries with a node generally higher/lower in records than those without?
 
 ```{r}
-#| label: standr-outcomes
+#| label: wilcox-test
 #| echo: true
 #| eval: true
 #| message: false
 #| warning: false
 
-data_regressions <- data_regressions %>% 
-  mutate(n_records = scale(log10(n_records))[,1]) %>% 
-  mutate(n_users = scale(log10(n_users))[,1]) %>% 
-  mutate(n_species = scale(log10(n_species))[,1]) %>% 
-  mutate(n_projects = scale(log10(n_projects))[,1]) %>% 
-  mutate(n_literature = scale(n_literature)[,1])
-
-# predictors that need to be log transformed
-data_regressions %>%
-  select(where(is.numeric) & 
-           where(~max(., na.rm = TRUE) > 1000)) %>% 
-    summary()
+wilcox.test(n_records ~ has_node, data = data_regressions)
+wilcox.test(n_users ~ has_node, data = data_regressions)
+wilcox.test(n_species ~ has_node, data = data_regressions)
+wilcox.test(p_research_grade ~ has_node, data = data_regressions)
+wilcox.test(n_projects ~ has_node, data = data_regressions)
+wilcox.test(n_literature ~ has_node, data = data_regressions)
 ```
-
-### Functions
-
-```{r}
-#| label: rf-function
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-source('R/funs_random_forest.R')
-```
-
-### Number of records on iNaturalist per country
-
-```{r}
-#| label: rf-n_records
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-rf_n_records <- model_iNat_RF(data_df = data_regressions,
-                              response_variable = 'n_records',
-                              skip_vars = c('p_research_grade',
-                                            'n_users',
-                                            'n_species',
-                                            'n_projects',
-                                            'n_literature'),
-                              log_vars = c('area', 
-                                           'population',
-                                           'gdp_per_capita',
-                                           'iucn_species'))
-
-# tuning
-rf_n_records[[1]]
-
-# observed vs predicted (test)
-rf_n_records[[2]]
-
-# observed vs predicted (CV)
-rf_n_records[[3]]
-
-# variable importance
-rf_n_records[[4]]
-ggsave(rf_n_records[[4]], filename='figs/variable_importance_n_records.png', device = 'png', dpi = 200, width = 8, height = 6)
-
-# partial plots
-rf_n_records[[5]]
-ggsave(rf_n_records[[5]], filename='figs/partial_plots_n_records.png', device = 'png', dpi = 200, width = 8, height = 6.5)
-
-# final model metrics rsq
-rf_n_records[[6]] %>% 
-  select(dataset, rsq=.estimate) %>% 
-  mutate(rsq = round(rsq, 3)) %>% 
-  rename(`R^2` = rsq) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# final model metrics rmse
-rf_n_records[[7]] %>% 
-  select(dataset, rmse=.estimate) %>% 
-  mutate(rmse = round(rmse, 3)) %>% 
-  rename(`RMSE` = rmse) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# variable importance
-rf_n_records[[9]] %>% 
-  select(Variable, standardise_Importance, 
-         standardise_Importance_R2) %>% 
-  mutate(standardise_Importance = standardise_Importance*100) %>% 
-  rename(`Importance %` = standardise_Importance,
-         `Contribution to R^2` = standardise_Importance_R2) %>% 
-  knitr::kable(digits = c(4,1)) %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-```
-
-### Number of users recording in the country
-
-```{r}
-#| label: rf-n_users
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-rf_n_users <- model_iNat_RF(data_df = data_regressions,
-                            response_variable = 'n_users',
-                            skip_vars = c('n_records',
-                                          'p_research_grade',
-                                          'n_species',
-                                          'n_projects',
-                                          'n_literature'),
-                              log_vars = c('area', 
-                                           'population',
-                                           'gdp_per_capita',
-                                           'iucn_species'))
-# tuning
-rf_n_users[[1]]
-
-# observed vs predicted (test)
-rf_n_users[[2]]
-
-# observed vs predicted (CV)
-rf_n_users[[3]]
-
-# variable importance
-rf_n_users[[4]]
-ggsave(rf_n_users[[4]], filename='figs/variable_importance_n_users.png', device = 'png', dpi = 200, width = 8, height = 6)
-
-# partial plots
-rf_n_users[[5]]
-ggsave(rf_n_users[[5]], filename='figs/partial_plots_n_users.png', device = 'png', dpi = 200, width = 8, height = 6.5)
-
-# final model metrics rsq
-rf_n_users[[6]] %>% 
-  select(dataset, rsq=.estimate) %>% 
-  mutate(rsq = round(rsq, 3)) %>% 
-  rename(`R^2` = rsq) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# final model metrics rmse
-rf_n_users[[7]] %>% 
-  select(dataset, rmse=.estimate) %>% 
-  mutate(rmse = round(rmse, 3)) %>% 
-  rename(`RMSE` = rmse) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# variable importance
-rf_n_users[[9]] %>% 
-  select(Variable, standardise_Importance, 
-         standardise_Importance_R2) %>% 
-  mutate(standardise_Importance = standardise_Importance*100) %>% 
-  rename(`Importance %` = standardise_Importance,
-         `Contribution to R^2` = standardise_Importance_R2) %>% 
-  knitr::kable(digits = c(4,1)) %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-```
-
-### Number of species recorded in the country
-
-```{r}
-#| label: rf-n_species
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-rf_n_species <- model_iNat_RF(data_df = data_regressions,
-                           response_variable = 'n_species',
-                           skip_vars = c('n_records',
-                                         'p_research_grade',
-                                         'n_users',
-                                         'n_projects',
-                                         'n_literature'),
-                              log_vars = c('area', 
-                                           'population',
-                                           'gdp_per_capita',
-                                           'iucn_species'))
-
-# tuning
-rf_n_species[[1]]
-
-# observed vs predicted (test)
-rf_n_species[[2]]
-
-# observed vs predicted (CV)
-rf_n_species[[3]]
-
-# variable importance
-rf_n_species[[4]]
-ggsave(rf_n_species[[4]], filename='figs/variable_importance_n_species.png', device = 'png', dpi = 200, width = 8, height = 6)
-
-# partial plots
-rf_n_species[[5]]
-ggsave(rf_n_species[[5]], filename='figs/partial_plots_n_species.png', device = 'png', dpi = 200, width = 8, height = 6.5)
-
-# final model metrics rsq
-rf_n_species[[6]] %>% 
-  select(dataset, rsq=.estimate) %>% 
-  mutate(rsq = round(rsq, 3)) %>% 
-  rename(`R^2` = rsq) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# final model metrics rmse
-rf_n_species[[7]] %>% 
-  select(dataset, rmse=.estimate) %>% 
-  mutate(rmse = round(rmse, 3)) %>% 
-  rename(`RMSE` = rmse) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# variable importance
-rf_n_species[[9]] %>% 
-  select(Variable, standardise_Importance, 
-         standardise_Importance_R2) %>% 
-  mutate(standardise_Importance = standardise_Importance*100) %>% 
-  rename(`Importance %` = standardise_Importance,
-         `Contribution to R^2` = standardise_Importance_R2) %>% 
-  knitr::kable(digits = c(4,1)) %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-```
-
-### Number of projects created in the country
-
-```{r}
-#| label: rf-n_projects
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-rf_n_projects <- model_iNat_RF(data_df = data_regressions,
-                           response_variable = 'n_projects',
-                           skip_vars = c('n_records',
-                                         'p_research_grade',
-                                         'n_users',
-                                         'n_species',
-                                         'n_literature'),
-                              log_vars = c('area', 
-                                           'population',
-                                           'gdp_per_capita',
-                                           'iucn_species'))
-
-# tuning
-rf_n_projects[[1]]
-
-# observed vs predicted (test)
-rf_n_projects[[2]]
-
-# observed vs predicted (CV)
-rf_n_projects[[3]]
-
-# variable importance
-rf_n_projects[[4]]
-ggsave(rf_n_projects[[4]], filename='figs/variable_importance_n_projects.png', device = 'png', dpi = 200, width = 8, height = 6)
-
-# partial plots
-rf_n_projects[[5]]
-ggsave(rf_n_projects[[5]], filename='figs/partial_plots_n_projects.png', device = 'png', dpi = 200, width = 8, height = 6.5)
-
-# final model metrics rsq
-rf_n_projects[[6]] %>% 
-  select(dataset, rsq=.estimate) %>% 
-  mutate(rsq = round(rsq, 3)) %>% 
-  rename(`R^2` = rsq) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# final model metrics rmse
-rf_n_projects[[7]] %>% 
-  select(dataset, rmse=.estimate) %>% 
-  mutate(rmse = round(rmse, 3)) %>% 
-  rename(`RMSE` = rmse) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# variable importance
-rf_n_projects[[9]] %>% 
-  select(Variable, standardise_Importance, 
-         standardise_Importance_R2) %>% 
-  mutate(standardise_Importance = standardise_Importance*100) %>% 
-  rename(`Importance %` = standardise_Importance,
-         `Contribution to R^2` = standardise_Importance_R2) %>% 
-  knitr::kable(digits = c(4,1)) %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-```
-
-### Proportion of records from iNaturalist that reached "Research Grade" per country
-
-```{r}
-#| label: rf-p_research_grade
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-rf_p_research_grade <- model_iNat_RF(data_df = data_regressions, 
-              response_variable = 'p_research_grade', 
-              skip_vars = c('n_records', 
-                            'n_users',
-                            'n_species',
-                            'n_projects',
-                            'n_literature'),
-                              log_vars = c('area', 
-                                           'population',
-                                           'gdp_per_capita',
-                                           'iucn_species'))
-
-# tuning
-rf_p_research_grade[[1]]
-
-# observed vs predicted (test)
-rf_p_research_grade[[2]]
-
-# observed vs predicted (CV)
-rf_p_research_grade[[3]]
-
-# variable importance
-rf_p_research_grade[[4]]
-ggsave(rf_p_research_grade[[4]], filename='figs/variable_importance_p_research_grade.png', device = 'png', dpi = 200, width = 8, height = 6)
-
-# partial plots
-rf_p_research_grade[[5]]
-ggsave(rf_p_research_grade[[5]], filename='figs/partial_plots_p_research_grade.png', device = 'png', dpi = 200, width = 8, height = 6.5)
-
-# final model metrics rsq
-rf_p_research_grade[[6]] %>% 
-  select(dataset, rsq=.estimate) %>% 
-  mutate(rsq = round(rsq, 3)) %>% 
-  rename(`R^2` = rsq) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# final model metrics rmse
-rf_p_research_grade[[7]] %>% 
-  select(dataset, rmse=.estimate) %>% 
-  mutate(rmse = round(rmse, 3)) %>% 
-  rename(`RMSE` = rmse) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# variable importance
-rf_p_research_grade[[9]] %>% 
-  select(Variable, standardise_Importance, 
-         standardise_Importance_R2) %>% 
-  mutate(standardise_Importance = standardise_Importance*100) %>% 
-  rename(`Importance %` = standardise_Importance,
-         `Contribution to R^2` = standardise_Importance_R2) %>% 
-  knitr::kable(digits = c(4,1)) %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-```
-
-### Number of peer-reviewed publications published in the country
-
-```{r}
-#| label: rf-n_literature
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-rf_n_literature <- model_iNat_RF(data_df = data_regressions,
-                           response_variable = 'n_literature',
-                           skip_vars = c('n_records',
-                                         'p_research_grade',
-                                         'n_users',
-                                         'n_species',
-                                         'n_projects'),
-                              log_vars = c('area', 
-                                           'population',
-                                           'gdp_per_capita',
-                                           'iucn_species'))
-
-# tuning
-rf_n_literature[[1]]
-
-# observed vs predicted (test)
-rf_n_literature[[2]]
-
-# observed vs predicted (CV)
-rf_n_literature[[3]]
-
-# variable importance
-rf_n_literature[[4]]
-ggsave(rf_n_literature[[4]], filename='figs/variable_importance_n_literature.png', device = 'png', dpi = 200, width = 8, height = 6)
-
-# partial plots
-rf_n_literature[[5]]
-ggsave(rf_n_literature[[5]], filename='figs/partial_plots_n_literature.png', device = 'png', dpi = 200, width = 8, height = 6.5)
-
-# final model metrics rsq
-rf_n_literature[[6]] %>% 
-  select(dataset, rsq=.estimate) %>% 
-  mutate(rsq = round(rsq, 3)) %>% 
-  rename(`R^2` = rsq) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# final model metrics rmse
-rf_n_literature[[7]] %>% 
-  select(dataset, rmse=.estimate) %>% 
-  mutate(rmse = round(rmse, 3)) %>% 
-  rename(`RMSE` = rmse) %>% 
-  knitr::kable() %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-
-# variable importance
-rf_n_literature[[9]] %>% 
-  select(Variable, standardise_Importance, 
-         standardise_Importance_R2) %>% 
-  mutate(standardise_Importance = standardise_Importance*100) %>% 
-  rename(`Importance %` = standardise_Importance,
-         `Contribution to R^2` = standardise_Importance_R2) %>% 
-  knitr::kable(digits = c(4,1)) %>% kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-```
-
-### Final numbers
-
-```{r}
-#| label: summary-performance
-#| echo: true
-#| eval: true
-#| message: false
-#| warning: false
-
-bind_rows(
-  bind_rows(rf_n_records[[6]], rf_n_records[[7]]) %>% 
-    mutate(response = 'n_records'),
-  bind_rows(rf_n_users[[6]], rf_n_users[[7]]) %>% 
-    mutate(response = 'n_users'),
-  bind_rows(rf_n_species[[6]], rf_n_species[[7]]) %>% 
-    mutate(response = 'n_species'),
-  bind_rows(rf_n_projects[[6]], rf_n_projects[[7]]) %>% 
-    mutate(response = 'n_projects'),
-  bind_rows(rf_p_research_grade[[6]], rf_p_research_grade[[7]]) %>%
-    mutate(response = 'p_research_grade'),
-  bind_rows(rf_n_literature[[6]], rf_n_literature[[7]]) %>% 
-    mutate(response = 'n_literature')
-) %>% select(-.estimator) %>% 
-  pivot_wider(names_from = c(dataset, .metric), 
-              values_from = .estimate) %>% 
-  relocate(train_rmse, .after = train_rsq) %>%
-  relocate(test_rmse, .after = test_rsq) %>%
-  kableExtra::kbl(col.names = c('Response', 
-                                'R2 train', 
-                                'RMSE train',
-                                'R2 test', 
-                                'RMSE test',
-                                'R2 CV', 
-                                'RMSE CV'),
-                  digits=3, format.args = list(big.mark = ',')) %>% 
-  kableExtra::kable_material('striped') 
-```
-
 ## GLM
 
 ### Standardise predictors and outcomes
 
-These steps are the same as for the random forests (which are done inside the function `model_iNat_RF`)
+These steps are the same as for the random forests
 
+  - Log transform (`log10`) and scale response (mean zero).  
   - Log transform (`log10`) and scale predictors (mean zero).  
   - Convert `latitude` to absolute latitude.  
   - Convert `has_node` and `neighbour_has_node` to factor.
@@ -1778,19 +1315,30 @@ These steps are the same as for the random forests (which are done inside the fu
 #| message: false
 #| warning: false
 
+# variables that need to be log transformed
+data_regressions %>%
+  select(where(is.numeric) & 
+           where(~max(., na.rm = TRUE) > 1000)) %>% 
+    summary()
+
 data_glm <- data_regressions %>% 
+  mutate(n_records = scale(log10(n_records))[,1]) %>% 
+  mutate(n_users = scale(log10(n_users))[,1]) %>% 
+  mutate(n_species = scale(log10(n_species))[,1]) %>% 
+  mutate(n_projects = scale(log10(n_projects))[,1]) %>% 
+  mutate(n_literature = scale(n_literature)[,1])
+
+data_glm <- data_glm %>% 
   mutate(area = scale(log10(area))[,1],
          population = scale(log10(population))[,1],
          gdp_per_capita = scale(log10(gdp_per_capita))[,1],
-         latitude = scale(log10(abs(latitude)))[,1],
-         n_species = scale(log10(n_species))[,1],
+         latitude = scale(abs(latitude))[,1],
+         iucn_species = scale(log10(iucn_species))[,1],
          has_node = as.factor(has_node),
          neighbour_has_node = as.factor(neighbour_has_node))
 
-data_glm$has_node <- relevel(factor(data_glm$has_node), 
-                             ref = "0")
-data_glm$neighbour_has_node <- relevel(factor(data_glm$neighbour_has_node), 
-                                       ref = "0")
+data_glm$has_node <- relevel(factor(data_glm$has_node), ref = "0")
+data_glm$neighbour_has_node <- relevel(factor(data_glm$neighbour_has_node), ref = "0")
 ```
 
 ### Linear models
@@ -1854,12 +1402,14 @@ lm_n_literature <- lm(n_literature ~
 #| message: false
 #| warning: false
 
-performance::r2(lm_n_records)
-performance::r2(lm_n_users)
-performance::r2(lm_n_species)
-performance::r2(lm_n_projects)
-performance::r2(lm_p_research_grade)
-performance::r2(lm_n_literature)
+print('Number of records');performance::performance(lm_n_records)
+print('Number of users');performance::performance(lm_n_users)
+print('Number of species');performance::performance(lm_n_species)
+print('Number of projects');performance::performance(lm_n_projects)
+print('Proportion of research-grade');performance::performance(lm_p_research_grade)
+print('Number of derived publications');performance::performance(lm_n_literature)
+
+tab_model(lm_n_records, lm_n_users, lm_n_species, lm_n_projects, lm_p_research_grade, lm_n_literature)
 ```
 
 ### Model estimates
@@ -1916,46 +1466,65 @@ tidy_models <- bind_rows(
 
 tidy_models %>% 
   relocate(model) %>% knitr::kable(digits = 3)
+
+tidy_models %>% filter(term=='has_node1')  %>% knitr::kable(digits = 3)
 ```
 
-## Plot predictor importance 
+### Estimated parameters
 
 ```{r}
-#| label: lm-predictor-importance
+#| label: lm-predictor-coefficients
 #| echo: true
 #| eval: true
 #| message: false
 #| warning: false
 #| out-width: 100%
-#| fig-height: 14
+#| fig-height: 6
 
 pos <- position_dodge(1, orientation = 'y')
 
-plot_lm_predictor_importance <- ggplot(tidy_models, 
+plot_lm_predictor_importance <- ggplot(tidy_models, aes(x=term, y=estimate, color=model, label=sig_stars)) +
+    geom_jitter(size=2, position = pos) +
+    scale_color_brewer(palette = "Paired", name = "") +
+    geom_errorbar(aes(ymin=conf.low, ymax=conf.high), width=0, position = pos)+
+    coord_flip() +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    labs(y = "Standardised coefficient", x = NULL) +
+    ggpubr::theme_cleveland() + 
+    theme(panel.background = element_rect(fill = 'grey99')) +
+    geom_text(aes(x = term, y = estimate, label = sig_stars, color = model),
+              position = pos, size = 5, vjust = 0.5, hjust = -0.25,  
+              show.legend = FALSE)
+
+plot_lm_predictor_importance
+
+plot_lm_predictor_importance_2 <- 
+  ggplot(tidy_models %>%
+           mutate(is_has_node = ifelse(term=='has_node1', 'yes', 'no')), 
        aes(x=term, y=estimate, 
-           color=model, label=sig_stars)) +
-  geom_jitter(size=2, position = pos) +
-  scale_color_brewer(palette = "Paired", name = "") +
+           color=is_has_node, label=sig_stars)) +
+  geom_jitter(size=2, position = pos, show.legend=F) +
+  scale_color_manual(values = c('#454545', '#74AC00')) +
   geom_errorbar(aes(ymin=conf.low, ymax=conf.high), width=0,
-                position = pos)+
+                position = pos, show.legend=F)+
   coord_flip() +
   geom_hline(yintercept = 0, linetype = "dashed") +
   labs(y = "Standardised coefficient", x = NULL) +
   ggpubr::theme_cleveland() + 
   theme(panel.background = element_rect(fill = 'grey99')) +
   geom_text(aes(x = term, y = estimate, 
-                label = sig_stars, color = model),
+                label = sig_stars, color = is_has_node),
             position = pos, size = 5,  
             vjust = 0.5, hjust = -0.25,  
-            show.legend = FALSE)
+            show.legend = FALSE) + facet_wrap(~model, scales = 'fixed')
 
-plot_lm_predictor_importance
+plot_lm_predictor_importance_2
 ```
 
-## Partial effects
+### Marginal effects
 
 ```{r}
-#| label: main-effects
+#| label: marginal-effect
 #| echo: true
 #| eval: true
 #| message: false
@@ -2024,8 +1593,8 @@ eff_all_star <- eff_all %>%
 pos <- position_dodge(width = 0.6)
 
 plot_lm_main_effects <- ggplot(eff_all_star,
-                               aes(x = has_node, 
-                                   y = fit, color = model)) +
+       aes(x = has_node, 
+           y = fit, color = has_node)) +
   geom_hline(yintercept = 0,linetype = 'dashed') +
   geom_point(size = 3, position = pos,show.legend = FALSE) +
   geom_errorbar(aes(ymin = lower, ymax = upper), 
@@ -2040,9 +1609,1199 @@ plot_lm_main_effects <- ggplot(eff_all_star,
     show.legend = FALSE
   ) +
   facet_wrap(~ model, ncol = 3, scales = 'fixed') +
-  scale_color_brewer(palette = "Paired", name = "") +
+  scale_color_manual(values = c('#454545', '#74AC00')) +
   labs(x = NULL, y = "Partial effect") +
   ggpubr::theme_pubclean() 
 
 plot_lm_main_effects
+
+
+eff_all_star %>% relocate(model) %>%  knitr::kable(digits = 3)
+```
+
+
+## Mixed-effects models
+
+### Data
+
+```{r}
+#| label: mixed-effects-data
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_temporal_records <- readRDS('data/archive/temporal_data_download/data_temporal_records.rds')
+data_temporal_users <- readRDS('data/archive/temporal_data_download/data_temporal_users.rds')
+data_temporal_species <- readRDS('data/archive/temporal_data_download/data_temporal_species.rds')
+data_temporal_projects <- readRDS('data/archive/temporal_data_download/data_temporal_projects.rds')
+data_temporal_prop_research_grade <- readRDS('data/archive/temporal_data_download/data_temporal_prop_research_grade.rds')
+data_temporal_literature <- readRDS('data/archive/temporal_data_download/data_temporal_literature.rds')
+
+data_mixed_effects <- data_variables %>% 
+  select(-c(region, flag, node_id, node_type, node_year, place_id)) %>% 
+  drop_na(area, population, gdp_per_capita, gdp_in_research, latitude, iucn_species) %>% 
+  filter(country_code != 'US')
+```
+
+### Number of records on iNaturalist per country, by year
+
+```{r}
+#| label: mixed-effects-records-data
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_temporal_records <- readRDS('data/archive/temporal_data_download/data_temporal_records.rds')
+
+data_temporal_records <- left_join(
+  data_mixed_effects %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_records %>% rename(n_records_years = n_records_inat)) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+data_temporal_lm <- data_temporal_records %>% 
+  mutate(area = scale(log10(area))[,1],
+         population = scale(log10(population))[,1],
+         gdp_per_capita = scale(log10(gdp_per_capita))[,1],
+         latitude = scale(log10(abs(latitude)))[,1],
+         iucn_species = scale(log10(iucn_species))[,1],
+         has_node = as.factor(has_node),
+         neighbour_has_node = as.factor(neighbour_has_node),
+         n_records_years = scale(log10(n_records_years+1))[,1])
+
+data_temporal_lm$year_c <- data_temporal_lm$year - mean(data_temporal_lm$year)
+data_temporal_lm$has_node <- relevel(factor(data_temporal_lm$has_node), ref = "0")
+data_temporal_lm$neighbour_has_node <- relevel(factor(data_temporal_lm$neighbour_has_node), ref = "0")
+```
+
+#### Time series plot
+
+```{r}
+#| label: time-series-records
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| out-width: 100%
+#| fig-height: 6
+
+data_temporal_records_plot <- left_join(
+  data_variables %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_records) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+# split data into highlighted and background
+highlighted_nodes <- data_temporal_records_plot %>%
+  filter(country_name %in% inat_network$node_country)
+
+highlighted_others <- data_temporal_records_plot %>%
+  filter(country_name %in% c('France', 'Peru', 'Thailand',
+                             'Belgium', 'Bhtuan', 'China',
+                             'South Africa', 'Nigeria')) 
+
+node_years <- highlighted_nodes %>%
+  distinct(country_name, node_year)
+
+temporal_records_plot_nodes_and_others <- bind_rows(highlighted_nodes, highlighted_others) %>%
+  ggplot(aes(x = year, y = n_records_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_records_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line( linewidth = 1, show.legend = FALSE) +
+  geom_point(size = 1.5, show.legend = FALSE) +
+  scale_color_manual(values = c('black','#74AC00')) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of records (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_records_plot_nodes <- highlighted_nodes %>%
+  ggplot(aes(x = year, y = n_records_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_records_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line(col='#74AC00', linewidth = 1, show.legend = FALSE) +
+  geom_point(col='#74AC00', size = 1.5, show.legend = FALSE) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of records (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_records_plot_nodes_and_others
+# temporal_records_plot_nodes
+```
+
+
+#### Nested models
+
+```{r}
+#| label: mixed-effects-models-records
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# Null model (random effect only)
+m0_records <- lmer(n_records_years ~ year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Add has_node main effect
+m1_records <- lmer(n_records_years ~ has_node * year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Full model
+m2_records <- lmer(n_records_years ~ has_node * year_c + (1 | country_name) + 
+             area + population + gdp_per_capita + gdp_in_research +
+             iucn_species + latitude + neighbour_has_node, 
+           data = data_temporal_lm, REML = FALSE)
+```
+
+```{r}
+#| label: mixed-effects-records-evaluation
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+anova_records <- anova(m0_records, m1_records, m2_records)
+knitr::kable(tidy(anova_records), 
+             digits = 3, caption = "Model comparison for n_records_years models")
+
+compare_performance(m0_records, m1_records, m2_records, rank = TRUE)
+
+summary(m2_records)$call
+tab_model(m2_records)
+```
+
+### Number of users recording in the country, by year
+
+```{r}
+#| label: mixed-effects-users
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+
+data_temporal_users <- readRDS('data/archive/temporal_data_download/data_temporal_users.rds')
+
+data_temporal_users <- left_join(
+  data_mixed_effects %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_users %>% rename(n_users_years = n_users)) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+data_temporal_lm <- data_temporal_users %>% 
+  mutate(area = scale(log10(area))[,1],
+         population = scale(log10(population))[,1],
+         gdp_per_capita = scale(log10(gdp_per_capita))[,1],
+         latitude = scale(log10(abs(latitude)))[,1],
+         iucn_species = scale(log10(iucn_species))[,1],
+         has_node = as.factor(has_node),
+         neighbour_has_node = as.factor(neighbour_has_node),
+         n_users_years = scale(log10(n_users_years+1))[,1])
+
+data_temporal_lm$year_c <- data_temporal_lm$year - mean(data_temporal_lm$year)
+data_temporal_lm$has_node <- relevel(factor(data_temporal_lm$has_node), ref = "0")
+data_temporal_lm$neighbour_has_node <- relevel(factor(data_temporal_lm$neighbour_has_node), ref = "0")
+```
+
+#### Time series plot
+
+```{r}
+#| label: time-series-users
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| out-width: 100%
+#| fig-height: 6
+
+data_temporal_users_plot <- left_join(
+  data_variables %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_users) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+# split data into highlighted and background
+highlighted_nodes <- data_temporal_users_plot %>%
+  filter(country_name %in% inat_network$node_country)
+
+highlighted_others <- data_temporal_users_plot %>%
+  filter(country_name %in% c('France', 'Peru', 'Thailand',
+                             'Belgium', 'Bhtuan', 'China',
+                             'South Africa', 'Nigeria')) 
+
+node_years <- highlighted_nodes %>%
+  distinct(country_name, node_year)
+
+temporal_users_plot_nodes_and_others <- bind_rows(highlighted_nodes, highlighted_others) %>%
+  ggplot(aes(x = year, y = n_users_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_users_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line( linewidth = 1, show.legend = FALSE) +
+  geom_point(size = 1.5, show.legend = FALSE) +
+  scale_color_manual(values = c('black','#74AC00')) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of users (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_users_plot_nodes <- highlighted_nodes %>%
+  ggplot(aes(x = year, y = n_users_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_users_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line(col='#74AC00', linewidth = 1, show.legend = FALSE) +
+  geom_point(col='#74AC00', size = 1.5, show.legend = FALSE) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of users (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_users_plot_nodes_and_others
+# temporal_plot_nodes
+```
+
+
+#### Nested models
+
+```{r}
+#| label: mixed-effects-models-users
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# Null model (random effect only)
+m0_users <- lmer(n_users_years ~ year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Add has_node main effect
+m1_users <- lmer(n_users_years ~ has_node * year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Full model
+m2_users <- lmer(n_users_years ~ has_node * year_c + (1 | country_name) + 
+             area + population + gdp_per_capita + gdp_in_research +
+             iucn_species + latitude + neighbour_has_node, 
+           data = data_temporal_lm, REML = FALSE)
+```
+
+```{r}
+#| label: mixed-effects-users-evaluation
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+anova_users <- anova(m0_users, m1_users, m2_users)
+knitr::kable(tidy(anova_users), 
+             digits = 3, caption = "Model comparison for n_users_years models")
+
+compare_performance(m0_users, m1_users, m2_users, rank = TRUE)
+
+summary(m2_users)$call
+tab_model(m2_users)
+```
+
+### Number of species recorded in the country, by year
+
+```{r}
+#| label: mixed-effects-species
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_temporal_species <- readRDS('data/archive/temporal_data_download/data_temporal_species.rds')
+
+data_temporal_species <- left_join(
+  data_mixed_effects %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_species %>% rename(n_species_years = n_species)) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+data_temporal_lm <- data_temporal_species %>% 
+  mutate(area = scale(log10(area))[,1],
+         population = scale(log10(population))[,1],
+         gdp_per_capita = scale(log10(gdp_per_capita))[,1],
+         latitude = scale(log10(abs(latitude)))[,1],
+         iucn_species = scale(log10(iucn_species))[,1],
+         has_node = as.factor(has_node),
+         neighbour_has_node = as.factor(neighbour_has_node),
+         n_species_years = scale(log10(n_species_years+1))[,1])
+
+data_temporal_lm$year_c <- data_temporal_lm$year - mean(data_temporal_lm$year)
+data_temporal_lm$has_node <- relevel(factor(data_temporal_lm$has_node), ref = "0")
+data_temporal_lm$neighbour_has_node <- relevel(factor(data_temporal_lm$neighbour_has_node), ref = "0")
+```
+
+#### Time series plot
+
+```{r}
+#| label: time-series-species
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| out-width: 100%
+#| fig-height: 6
+
+data_temporal_species_plot <- left_join(
+  data_variables %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_species) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+# split data into highlighted and background
+highlighted_nodes <- data_temporal_species_plot %>%
+  filter(country_name %in% inat_network$node_country)
+
+highlighted_others <- data_temporal_species_plot %>%
+  filter(country_name %in% c('France', 'Peru', 'Thailand',
+                             'Belgium', 'Bhtuan', 'China',
+                             'South Africa', 'Nigeria')) 
+
+node_years <- highlighted_nodes %>%
+  distinct(country_name, node_year)
+
+temporal_species_plot_nodes_and_others <- bind_rows(highlighted_nodes, highlighted_others) %>%
+  ggplot(aes(x = year, y = n_species_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_species_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line( linewidth = 1, show.legend = FALSE) +
+  geom_point(size = 1.5, show.legend = FALSE) +
+  scale_color_manual(values = c('black','#74AC00')) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of species (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_species_plot_nodes <- highlighted_nodes %>%
+  ggplot(aes(x = year, y = n_species_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_species_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line(col='#74AC00', linewidth = 1, show.legend = FALSE) +
+  geom_point(col='#74AC00', size = 1.5, show.legend = FALSE) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of species (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_species_plot_nodes_and_others
+# temporal_plot_nodes
+```
+
+#### Nested models
+
+```{r}
+#| label: mixed-effects-models-species
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# Null model (random effect only)
+m0_species <- lmer(n_species_years ~ year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Add has_node main effect
+m1_species <- lmer(n_species_years ~ has_node * year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Full model
+m2_species <- lmer(n_species_years ~ has_node * year_c + (1 | country_name) + 
+             area + population + gdp_per_capita + gdp_in_research +
+             iucn_species + latitude + neighbour_has_node, 
+           data = data_temporal_lm, REML = FALSE)
+```
+
+```{r}
+#| label: mixed-effects-species-evaluation
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+anova_species <- anova(m0_species, m1_species, m2_species)
+knitr::kable(tidy(anova_species), 
+             digits = 3, caption = "Model comparison for n_species_years models")
+
+compare_performance(m0_species, m1_species, m2_species, rank = TRUE)
+
+summary(m2_species)$call
+tab_model(m2_species)
+```
+
+
+### Number of projects created in the country, by year 
+
+> It is not possible to download the number of projects per year
+
+### Proportion of records from iNaturalist that reach "Research Grade", by year
+
+```{r}
+#| label: mixed-effects-p_research_grade
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_temporal_p_research_grade <- readRDS('data/archive/temporal_data_download/data_temporal_prop_research_grade.rds')
+
+data_temporal_p_research_grade <- left_join(
+  data_mixed_effects %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_p_research_grade %>% rename(p_research_grade_years = p_research_grade)) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+data_temporal_lm <- data_temporal_p_research_grade %>% 
+  mutate(area = scale(log10(area))[,1],
+         population = scale(log10(population))[,1],
+         gdp_per_capita = scale(log10(gdp_per_capita))[,1],
+         latitude = scale(log10(abs(latitude)))[,1],
+         iucn_species = scale(log10(iucn_species))[,1],
+         has_node = as.factor(has_node),
+         neighbour_has_node = as.factor(neighbour_has_node),
+         p_research_grade_years = scale(log10(p_research_grade_years+1))[,1])
+
+data_temporal_lm$year_c <- data_temporal_lm$year - mean(data_temporal_lm$year)
+data_temporal_lm$has_node <- relevel(factor(data_temporal_lm$has_node), ref = "0")
+data_temporal_lm$neighbour_has_node <- relevel(factor(data_temporal_lm$neighbour_has_node), ref = "0")
+```
+
+#### Time series plot
+
+```{r}
+#| label: time-series-p_research_grade
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| out-width: 100%
+#| fig-height: 6
+
+data_temporal_p_research_grade_plot <- left_join(
+  data_variables %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_p_research_grade) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+# split data into highlighted and background
+highlighted_nodes <- data_temporal_p_research_grade_plot %>%
+  filter(country_name %in% inat_network$node_country)
+
+highlighted_others <- data_temporal_p_research_grade_plot %>%
+  filter(country_name %in% c('France', 'Peru', 'Thailand',
+                             'Belgium', 'Bhtuan', 'China',
+                             'South Africa', 'Nigeria')) 
+
+node_years <- highlighted_nodes %>%
+  distinct(country_name, node_year)
+
+temporal_p_research_grade_plot_nodes_and_others <- bind_rows(highlighted_nodes, highlighted_others) %>%
+  ggplot(aes(x = year, y = p_research_grade_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_p_research_grade_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line( linewidth = 1, show.legend = FALSE) +
+  geom_point(size = 1.5, show.legend = FALSE) +
+  scale_color_manual(values = c('black','#74AC00')) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  # scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Proportion of research grade") +
+  ggpubr::theme_cleveland()
+
+temporal_p_research_grade_plot_nodes <- highlighted_nodes %>%
+  ggplot(aes(x = year, y = p_research_grade_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_p_research_grade_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line(col='#74AC00', linewidth = 1, show.legend = FALSE) +
+  geom_point(col='#74AC00', size = 1.5, show.legend = FALSE) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Proportion of research grade") +
+  ggpubr::theme_cleveland()
+
+temporal_p_research_grade_plot_nodes_and_others
+# temporal_plot_nodes
+```
+
+
+#### Nested models
+
+```{r}
+#| label: mixed-effects-models-p_research_grade
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# Null model (random effect only)
+m0_p_research_grade <- lmer(p_research_grade_years ~ year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Add has_node main effect
+m1_p_research_grade <- lmer(p_research_grade_years ~ has_node * year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Full model
+m2_p_research_grade <- lmer(p_research_grade_years ~ has_node * year_c + (1 | country_name) + 
+             area + population + gdp_per_capita + gdp_in_research +
+             iucn_species + latitude + neighbour_has_node, 
+           data = data_temporal_lm, REML = FALSE)
+```
+
+```{r}
+#| label: mixed-effects-p_research_grade-evaluation
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+anova_p_research_grade <- anova(m0_p_research_grade, m1_p_research_grade, m2_p_research_grade)
+knitr::kable(tidy(anova_p_research_grade), 
+             digits = 3, caption = "Model comparison for p_research_grade_years models")
+
+compare_performance(m0_p_research_grade, m1_p_research_grade, m2_p_research_grade, rank = TRUE)
+
+summary(m2_p_research_grade)$call
+tab_model(m2_p_research_grade)
+```
+
+
+### Number of peer-reviewed publications published in the country, by year
+
+
+```{r}
+#| label: mixed-effects-literature
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_temporal_literature <- readRDS('data/archive/temporal_data_download/data_temporal_literature.rds')
+
+data_temporal_literature <- left_join(
+  data_mixed_effects %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_literature %>% rename(n_literature_years = n_literature)) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+data_temporal_lm <- data_temporal_literature %>% 
+  mutate(area = scale(log10(area))[,1],
+         population = scale(log10(population))[,1],
+         gdp_per_capita = scale(log10(gdp_per_capita))[,1],
+         latitude = scale(log10(abs(latitude)))[,1],
+         iucn_species = scale(log10(iucn_species))[,1],
+         has_node = as.factor(has_node),
+         neighbour_has_node = as.factor(neighbour_has_node),
+         n_literature_years = scale(log10(n_literature_years+1))[,1])
+
+data_temporal_lm$year_c <- data_temporal_lm$year - mean(data_temporal_lm$year)
+data_temporal_lm$has_node <- relevel(factor(data_temporal_lm$has_node), ref = "0")
+data_temporal_lm$neighbour_has_node <- relevel(factor(data_temporal_lm$neighbour_has_node), ref = "0")
+```
+
+#### Time series plot
+
+```{r}
+#| label: time-series-literature
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+#| out-width: 100%
+#| fig-height: 6
+
+data_temporal_literature_plot <- left_join(
+  data_variables %>%
+    select(-c(n_records, p_research_grade, n_users, n_species, n_projects, n_literature)), 
+  data_temporal_literature) %>% 
+  mutate(has_node = ifelse(!is.na(node_name), 1, 0))
+
+# split data into highlighted and background
+highlighted_nodes <- data_temporal_literature_plot %>%
+  filter(country_name %in% inat_network$node_country)
+
+highlighted_others <- data_temporal_literature_plot %>%
+  filter(country_name %in% c('France', 'Peru', 'Thailand',
+                             'Belgium', 'Bhtuan', 'China',
+                             'South Africa', 'Nigeria')) 
+
+node_years <- highlighted_nodes %>%
+  distinct(country_name, node_year)
+
+temporal_literature_plot_nodes_and_others <- bind_rows(highlighted_nodes, highlighted_others) %>%
+  ggplot(aes(x = year, y = n_literature_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_literature_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line( linewidth = 1, show.legend = FALSE) +
+  geom_point(size = 1.5, show.legend = FALSE) +
+  scale_color_manual(values = c('black','#74AC00')) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of literature (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_literature_plot_nodes <- highlighted_nodes %>%
+  ggplot(aes(x = year, y = n_literature_years, 
+             colour = factor(has_node))) +
+  # grey background lines (all countries, in every facet)
+  geom_line(
+    data = data_temporal_literature_plot %>% rename(country_name2 = country_name),
+    aes(group = country_name2),
+    colour = "grey80", linewidth = 0.4, alpha = 0.5
+  ) +
+  geom_line(col='#74AC00', linewidth = 1, show.legend = FALSE) +
+  geom_point(col='#74AC00', size = 1.5, show.legend = FALSE) +
+  geom_vline(
+    data = node_years,
+    aes(xintercept = node_year),
+    linetype = "dashed",
+    colour = "grey30",
+    linewidth = 0.5
+  ) +
+  scale_y_log10(labels = scales::label_comma()) +
+  facet_wrap(~ country_name, ncol = 7) +
+  labs(x = "", y = "Number of literature (log scale)") +
+  ggpubr::theme_cleveland()
+
+temporal_literature_plot_nodes_and_others
+# temporal_plot_nodes
+```
+
+
+#### Nested models
+
+```{r}
+#| label: mixed-effects-models-literature
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# Null model (random effect only)
+m0_literature <- lmer(n_literature_years ~ year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Add has_node main effect
+m1_literature <- lmer(n_literature_years ~ has_node * year_c + (1 | country_name), 
+           data = data_temporal_lm, REML = FALSE)
+
+# Full model
+m2_literature <- lmer(n_literature_years ~ has_node * year_c + (1 | country_name) + 
+             area + population + gdp_per_capita + gdp_in_research +
+             iucn_species + latitude + neighbour_has_node, 
+           data = data_temporal_lm, REML = FALSE)
+```
+
+```{r}
+#| label: mixed-effects-literature-evaluation
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+anova_literature <- anova(m0_literature, m1_literature, m2_literature)
+knitr::kable(tidy(anova_literature), 
+             digits = 3, caption = "Model comparison for n_literature_years models")
+
+compare_performance(m0_literature, m1_literature, m2_literature, rank = TRUE)
+
+summary(m2_literature)$call
+tab_model(m2_literature)
+```
+
+
+### Model performance
+
+```{r}
+#| label: all-nested-models
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+bind_rows(tidy(anova_records),
+          tidy(anova_users),
+          tidy(anova_species),
+          tidy(anova_p_research_grade),
+          tidy(anova_literature)) %>% 
+  knitr::kable(digits = 1, caption = "All models")
+
+
+```
+
+
+```{r}
+#| label: mixed-model-performance
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+print('Number of records per year');performance::performance(m0_records)
+print('Number of users per year');performance::performance(m0_users)
+print('Number of species per year');performance::performance(m0_species)
+print('Proportion of research-grade per year');performance::performance(m0_p_research_grade)
+print('Number of derived publications per year');performance::performance(m0_literature)
+
+tab_model(m0_records, m0_users, m0_species, m0_p_research_grade, m0_literature)
+
+print('Number of records per year');performance::performance(m1_records)
+print('Number of users per year');performance::performance(m1_users)
+print('Number of species per year');performance::performance(m1_species)
+print('Proportion of research-grade per year');performance::performance(m1_p_research_grade)
+print('Number of derived publications per year');performance::performance(m1_literature)
+
+tab_model(m1_records, m1_users, m1_species, m1_p_research_grade, m1_literature)
+
+print('Number of records per year');performance::performance(m2_records)
+print('Number of users per year');performance::performance(m2_users)
+print('Number of species per year');performance::performance(m2_species)
+print('Proportion of research-grade per year');performance::performance(m2_p_research_grade)
+print('Number of derived publications per year');performance::performance(m2_literature)
+
+tab_model(m2_records, m2_users, m2_species, m2_p_research_grade, m2_literature)
+```
+
+
+## Before and after the node
+
+- `node_year`: the year in which a country's national node was officially established (e.g., 2021 for Uruguay's NaturalistaUY).   
+- `years_since_node`: the number of years between the assessed year and the node's establishment year, calculated as `year - node_year`. This is negative for years before the node existed, zero in the year of establishment, and positive for years after.
+- `post_node`: a binary indicator equal to `1` if the assessed year is greater than or equal to `node_year` (i.e., the node already existed that year), and `0` otherwise.   
+
+### Number of records
+
+```{r}
+#| label: before-and-after-records
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_before_after_records <- left_join(node_years,
+          data_temporal_records %>%
+            select(country_name, node_name, year, n_records_years)) %>% 
+  mutate(years_since_node = year - node_year,
+         post_node = ifelse(year >= node_year, 1,0)) %>% 
+  mutate(n_records_years = scale(log10(n_records_years+1))[,1])
+
+data_before_after_records %>% 
+  filter(country_name=='Uruguay') %>% knitr::kable(digits = 3)
+
+```
+
+```{r}
+#| label: before-and-after-records-model
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+n_records_before_after <- lmer(n_records_years ~ years_since_node * post_node + (1 + years_since_node | country_name), data = data_before_after_records)
+
+summary(n_records_before_after)$call
+performance::performance(n_records_before_after)
+tab_model(n_records_before_after)
+
+pred <- ggpredict(n_records_before_after, terms = c("years_since_node", "post_node"))
+
+# ggplot(data_before_after_records, 
+#        aes(x = years_since_node, y = n_records_years, group = country_name)) +
+#   geom_line(alpha = 0.5, color = "grey50") +
+#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
+#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
+#   geom_vline(xintercept = 0, linetype = "dashed") +
+#   labs(x = "Years since node establishment", y = "Number of records") +
+#   theme_minimal()
+
+ggplot(data_before_after_records, aes(x = years_since_node, y = n_records_years)) +
+  geom_line(col='#74AC00') +
+  geom_point(col='#74AC00') +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  facet_wrap(~ country_name, scales = "fixed") +
+  labs(x = "Years since node establishment", y = "Number of records") +
+  theme_minimal()
+```
+
+### Number of users
+
+```{r}
+#| label: before-and-after-users
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_before_after_users <- left_join(node_years,
+          data_temporal_users %>%
+            select(country_name, node_name, year, n_users_years)) %>% 
+  mutate(years_since_node = year - node_year,
+         post_node = ifelse(year >= node_year, 1,0)) %>% 
+  mutate(n_users_years = scale(log10(n_users_years+1))[,1])
+
+data_before_after_users %>% 
+  filter(country_name=='New Zealand') %>% knitr::kable(digits = 3)
+
+```
+
+```{r}
+#| label: before-and-after-users-model
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+n_users_before_after <- lmer(n_users_years ~ years_since_node * post_node + (1 + years_since_node | country_name), data = data_before_after_users)
+
+summary(n_users_before_after)$call
+performance::performance(n_users_before_after)
+tab_model(n_users_before_after)
+
+pred <- ggpredict(n_users_before_after, terms = c("years_since_node", "post_node"))
+
+# ggplot(data_before_after_users, 
+#        aes(x = years_since_node, y = n_users_years, group = country_name)) +
+#   geom_line(alpha = 0.5, color = "grey50") +
+#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
+#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
+#   geom_vline(xintercept = 0, linetype = "dashed") +
+#   labs(x = "Years since node establishment", y = "Number of users") +
+#   theme_minimal()
+
+ggplot(data_before_after_users, aes(x = years_since_node, y = n_users_years)) +
+  geom_line(col='#74AC00') +
+  geom_point(col='#74AC00') +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  facet_wrap(~ country_name, scales = "fixed") +
+  labs(x = "Years since node establishment", y = "Number of users") +
+  theme_minimal()
+```
+
+
+### Number of species
+
+```{r}
+#| label: before-and-after-species
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_before_after_species <- left_join(node_years,
+          data_temporal_species %>%
+            select(country_name, node_name, year, n_species_years)) %>% 
+  mutate(years_since_node = year - node_year,
+         post_node = ifelse(year >= node_year, 1,0)) %>% 
+  mutate(n_species_years = scale(log10(n_species_years+1))[,1])
+
+data_before_after_species %>% 
+  filter(country_name=='Chile') %>% knitr::kable(digits = 3)
+
+```
+
+```{r}
+#| label: before-and-after-species-model
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+n_species_before_after <- lmer(n_species_years ~ years_since_node * post_node + (1 + years_since_node | country_name), data = data_before_after_species)
+
+summary(n_species_before_after)$call
+performance::performance(n_species_before_after)
+tab_model(n_species_before_after)
+
+pred <- ggpredict(n_species_before_after, terms = c("years_since_node", "post_node"))
+
+# ggplot(data_before_after_species, 
+#        aes(x = years_since_node, y = n_species_years, group = country_name)) +
+#   geom_line(alpha = 0.5, color = "grey50") +
+#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
+#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
+#   geom_vline(xintercept = 0, linetype = "dashed") +
+#   labs(x = "Years since node establishment", y = "Number of species") +
+#   theme_minimal()
+
+ggplot(data_before_after_species, aes(x = years_since_node, y = n_species_years)) +
+  geom_line(col='#74AC00') +
+  geom_point(col='#74AC00') +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  facet_wrap(~ country_name, scales = "fixed") +
+  labs(x = "Years since node establishment", y = "Number of species") +
+  theme_minimal()
+```
+
+### Proportion of research grade records
+
+```{r}
+#| label: before-and-after-p_research_grade
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_before_after_p_research_grade <- left_join(node_years,
+          data_temporal_p_research_grade %>%
+            select(country_name, node_name, year, p_research_grade_years)) %>% 
+  mutate(years_since_node = year - node_year,
+         post_node = ifelse(year >= node_year, 1,0)) %>% 
+  mutate(p_research_grade_years = scale(log10(p_research_grade_years+1))[,1])
+
+data_before_after_species %>% 
+  filter(country_name=='Argentina') %>% knitr::kable(digits = 3)
+
+```
+
+```{r}
+#| label: before-and-after-p_research_grade-model
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+p_research_grade_before_after <- lmer(p_research_grade_years ~ years_since_node * post_node + (1 + years_since_node | country_name), data = data_before_after_p_research_grade)
+
+summary(p_research_grade_before_after)$call
+performance::performance(p_research_grade_before_after)
+tab_model(p_research_grade_before_after)
+
+pred <- ggpredict(p_research_grade_before_after, terms = c("years_since_node", "post_node"))
+
+# ggplot(data_before_after_species, 
+#        aes(x = years_since_node, y = p_research_grade_years, group = country_name)) +
+#   geom_line(alpha = 0.5, color = "grey50") +
+#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
+#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
+#   geom_vline(xintercept = 0, linetype = "dashed") +
+#   labs(x = "Years since node establishment", y = "Number of species") +
+#   theme_minimal()
+
+ggplot(data_before_after_p_research_grade, aes(x = years_since_node, y = p_research_grade_years)) +
+  geom_line(col='#74AC00') +
+  geom_point(col='#74AC00') +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  facet_wrap(~ country_name, scales = "fixed") +
+  labs(x = "Years since node establishment", y = "Proportion of research grade records") +
+  theme_minimal()
+```
+
+### Number of literature
+
+```{r}
+#| label: before-and-after-literature
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+data_before_after_literature <- left_join(node_years,
+          data_temporal_literature %>%
+            select(country_name, node_name, year, n_literature_years)) %>% 
+  mutate(years_since_node = year - node_year,
+         post_node = ifelse(year >= node_year, 1,0)) 
+
+data_before_after_literature %>% 
+  filter(country_name=='Chile') %>% knitr::kable(digits = 3)
+
+```
+
+```{r}
+#| label: before-and-after-literature-model
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+n_literature_before_after <- lmer(n_literature_years ~ years_since_node * post_node + (1 + years_since_node | country_name), data = data_before_after_literature)
+
+summary(n_literature_before_after)$call
+performance::performance(n_literature_before_after)
+tab_model(n_literature_before_after)
+
+pred <- ggpredict(n_literature_before_after, terms = c("years_since_node", "post_node"))
+
+# ggplot(data_before_after_literature, 
+#        aes(x = years_since_node, y = n_literature_years, group = country_name)) +
+#   geom_line(alpha = 0.5, color = "grey50") +
+#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
+#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
+#   geom_vline(xintercept = 0, linetype = "dashed") +
+#   labs(x = "Years since node establishment", y = "Number of literature") +
+#   theme_minimal()
+
+ggplot(data_before_after_literature, aes(x = years_since_node, y = n_literature_years)) +
+  geom_line(col='#74AC00') +
+  geom_point(col='#74AC00') +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+  facet_wrap(~ country_name, scales = "fixed") +
+  labs(x = "Years since node establishment", y = "Number of literature") +
+  theme_minimal()
+```
+
+### All models 
+
+
+```{r}
+#| label: before-and-after-all
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+tab_model(n_records_before_after, n_users_before_after, 
+          n_species_before_after, p_research_grade_before_after,
+          n_literature_before_after)
+
+```
+
+
+## Test with all countries (not just the network members) using an arbitrary break-point 
+
+```{r}
+
+break_point <- 2019
+
+data_before_after_records_all <- data_temporal_records %>%
+  select(country_name, node_name, year, n_records_years, has_node) %>% 
+  mutate(year_break_point = year - break_point,
+         post_break = ifelse(year >= break_point, 1,0)) %>% 
+  mutate(n_records_years = scale(log10(n_records_years+1))[,1])
+
+
+data_before_after_records_all %>% 
+  filter(country_name=='Uruguay') %>% knitr::kable(digits = 3)
+
+n_records_before_after_all <- lmer(n_records_years ~ has_node * year_break_point * post_break + 
+                                 (1 + year_break_point | country_name),
+                               data = data_before_after_records_all)
+
+summary(n_records_before_after_all)$call
+performance::performance(n_records_before_after_all)
+tab_model(n_records_before_after_all)
+
+pred <- ggpredict(n_records_before_after_all, terms = c("year_break_point", "post_break", "has_node"))
+
+ggplot(data_before_after_records_all, 
+       aes(x = year_break_point, y = n_records_years, group = country_name)) +
+  geom_line(alpha = 1, aes(col = as.factor(has_node))) +
+  scale_color_manual(values = c('black','#74AC00')) +
+  # geom_line(data = pred, aes(x = x, y = predicted), 
+  #           linewidth = 1, inherit.aes = FALSE, color='red') +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(x = "Years before breakpoint (2019)", y = "Number of records", col='Has node') +
+  theme_minimal()
+
 ```
