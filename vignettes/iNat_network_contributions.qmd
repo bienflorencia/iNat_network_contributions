@@ -33,20 +33,11 @@ library(lmerTest)
 library(performance)
 library(sjPlot)
 library(ggeffects)
-library(future)
-library(doFuture)
-library(httr)
-library(jsonlite)
 library(knitr)
 library(rgbif)
 library(ggrepel)
 library(extrafont)
 library(patchwork)
-library(parallel)
-library(doParallel)
-library(hstats)
-library(vip)
-library(future)
 library(sf)
 sf_use_s2(FALSE)
 library(tidymodels)
@@ -1176,109 +1167,55 @@ plot_hist_iucn_species <- ggplot(data_regressions, aes(x = iucn_species)) +
 #| out-width: 100%
 #| fig-height: 7
 
-boxplot_n_records <- ggplot(data_regressions %>% 
-         mutate(has_node = factor(has_node)), 
-       aes(x = has_node, y = n_records, fill=has_node)) +
-  geom_boxplot(notch = T, linewidth = 0, 
-               median.color = "black",
-               whisker.linewidth = 0.5,
-               median.linewidth = 0.8,
-               show.legend = F) + 
-  scale_fill_manual(values = c('#454545', '#74AC00')) +
-  scale_y_log10(labels = scales::label_number(scale_cut = c(m = 1000000))) +
-  xlab("") +
-  ylab("Number of records (log scale)") +
-  ggsignif::geom_signif(comparisons = list(c("0", "1")),
-                        map_signif_level = TRUE,
-                        textsize = 5, vjust = 2) +
-  ggpubr::theme_pubclean()
-
-boxplot_n_users <- ggplot(data_regressions %>% 
-         mutate(has_node = factor(has_node)), 
-       aes(x = has_node, y = n_users, fill=has_node)) +
-  geom_boxplot(notch = T, linewidth = 0, 
-               median.color = "black",
-               whisker.linewidth = 0.5,
-               median.linewidth = 0.8,
-               show.legend = F) + 
-  scale_fill_manual(values = c('#454545', '#74AC00')) +
-  scale_y_log10(labels = scales::label_number(scale_cut = c(m = 1000000))) +
-  xlab("") +
-  ylab("Number of users (log scale)") +
-  ggsignif::geom_signif(comparisons = list(c("0", "1")),
-                        map_signif_level = TRUE,
-                        textsize = 5, vjust = 2) +
-  ggpubr::theme_pubclean()
-
-boxplot_n_species <- ggplot(data_regressions %>% 
-         mutate(has_node = factor(has_node)), 
-       aes(x = has_node, y = n_species, fill=has_node)) +
-  geom_boxplot(notch = T, linewidth = 0, 
-               median.color = "black",
-               whisker.linewidth = 0.5,
-               median.linewidth = 0.8,
-               show.legend = F) + 
-  scale_fill_manual(values = c('#454545', '#74AC00')) +
-  scale_y_log10(labels = scales::label_number(scale_cut = c(m = 1000000))) +
-  xlab("") +
-  ylab("Number of species (log scale)") +
-  ggsignif::geom_signif(comparisons = list(c("0", "1")),
-                        map_signif_level = TRUE,
-                        textsize = 5, vjust = 2) +
-  ggpubr::theme_pubclean()
-
-boxplot_p_research <- ggplot(data_regressions %>% 
+plot_response_boxplots <- function(data_regressions, variable_name, plot=T) {
+  
+  labels <- c(n_records = "Number of records (log scale)",
+              n_users = "Number of users (log scale)",
+              n_species = "Number of species (log scale)",
+              p_research_grade = "Proportion of research grade records",
+              n_projects = "Number of projects (log scale)",
+              n_literature = "Number of publications (log scale)")
+  
+  y_label <- labels[[variable_name]]
+  
+  letter_plot <- c(n_records = '(a)',
+                   n_users = '(b)',
+                   n_species = '(c)',
+                   p_research_grade = '(d)',
+                   n_projects  = '(e)',
+                   n_literature = '(f)')
+  
+  ggplot(data_regressions %>% 
            mutate(has_node = factor(has_node)), 
-       aes(x = has_node, y = p_research_grade, fill=has_node)) +
+         aes(x = has_node, y = !!sym(variable_name), fill=has_node)) +
     geom_boxplot(notch = T, linewidth = 0, 
                  median.color = "black",
                  whisker.linewidth = 0.5,
                  median.linewidth = 0.8,
                  show.legend = F) + 
+    # geom_jitter(width = 0.1, alpha = 0.5, size = 1.5, show.legend = F) +  
     scale_fill_manual(values = c('#454545', '#74AC00')) +
+    scale_y_log10(labels = scales::label_number(scale_cut = c(m = 1000000))) +
     xlab("") +
-    ylab("Proportion of research grade records") +
+    ylab(y_label) +
     ggsignif::geom_signif(comparisons = list(c("0", "1")),
                           map_signif_level = TRUE,
                           textsize = 5, vjust = 2) +
-    ggpubr::theme_pubclean()
+    ggpubr::theme_pubclean() + 
+    ggtitle(letter_plot[[variable_name]])
+}
 
-boxplot_n_projects <- ggplot(data_regressions %>% 
-           mutate(has_node = factor(has_node)), 
-       aes(x = has_node, y = n_projects, fill=has_node)) +
-    geom_boxplot(notch = T, linewidth = 0, 
-                 median.color = "black",
-                 whisker.linewidth = 0.5,
-                 median.linewidth = 0.8,
-                 show.legend = F) + 
-    scale_fill_manual(values = c('#454545', '#74AC00')) +
-  scale_y_log10(labels = scales::label_number(scale_cut = c(m = 1000000))) +
-    xlab("") +
-    ylab("Number of projects (log scale)") +
-    ggsignif::geom_signif(comparisons = list(c("0", "1")),
-                          map_signif_level = TRUE,
-                          textsize = 5, vjust = 2) +
-    ggpubr::theme_pubclean()
-
-boxplot_n_literature <- ggplot(data_regressions %>% 
-           mutate(has_node = factor(has_node)), 
-       aes(x = has_node, y = n_literature, fill=has_node)) +
-    geom_boxplot(notch = T, linewidth = 0, 
-                 median.color = "black",
-                 whisker.linewidth = 0.5,
-                 median.linewidth = 0.8,
-                 show.legend = F) + 
-    scale_fill_manual(values = c('#454545', '#74AC00')) +
-  scale_y_log10(labels = scales::label_number(scale_cut = c(m = 1000000))) +
-    xlab("") +
-    ylab("Number of publications (log scale)") +
-    ggsignif::geom_signif(comparisons = list(c("0", "1")),
-                          map_signif_level = TRUE,
-                          textsize = 5, vjust = 2) +
-    ggpubr::theme_pubclean()
+boxplot_n_records <- plot_response_boxplots(data_regressions, 'n_records')
+boxplot_n_users <- plot_response_boxplots(data_regressions, 'n_users')
+boxplot_n_species <- plot_response_boxplots(data_regressions, 'n_species')
+boxplot_p_research <- plot_response_boxplots(data_regressions, 'p_research_grade')
+boxplot_n_projects <- plot_response_boxplots(data_regressions, 'n_projects')
+boxplot_n_literature <- plot_response_boxplots(data_regressions, 'n_literature')
 
 (boxplot_n_records + boxplot_n_users + boxplot_n_species) / 
 (boxplot_p_research + boxplot_n_projects + boxplot_n_literature)
+
+# save 800 x 600
 ```
 
 Are countries with a node generally higher/lower in records than those without?
@@ -1583,35 +1520,31 @@ eff_all_star <- eff_all %>%
   mutate(star = replace_na(star, "")) %>% 
   mutate(model = fct_relevel(
       model,
-      "Number of records",
-      "Number of users",
-      "Number of species",
-      "Number of projects",
+      "Proportion of research grade",
       "Number of publications",
-      "Proportion of research grade"))
+      "Number of projects",
+      "Number of species",
+      "Number of users",
+      "Number of records"))
 
 pos <- position_dodge(width = 0.6)
 
 plot_lm_main_effects <- ggplot(eff_all_star,
-       aes(x = has_node, 
-           y = fit, color = has_node)) +
-  geom_hline(yintercept = 0,linetype = 'dashed') +
-  geom_point(size = 3, position = pos,show.legend = FALSE) +
-  geom_errorbar(aes(ymin = lower, ymax = upper), 
+       aes(x = fit, y = model, color = has_node)) +
+  geom_vline(xintercept = 0, linetype = 'dashed', lwd = 0.5) +
+  geom_point(size = 3, position = pos) +
+  geom_errorbar(aes(xmin = lower, xmax = upper),
                 width = 0,linewidth = 1, position = pos,
                 show.legend = FALSE) +
-  geom_text(
-    data = subset(eff_all_star, 
-                  has_node == "Has node" & star != ""),
-    aes(label = star),
-    position = pos,
-    hjust = -1,
-    show.legend = FALSE
-  ) +
-  facet_wrap(~ model, ncol = 3, scales = 'fixed') +
+  geom_text(data = subset(eff_all_star,
+                          has_node == "Has node" & star != ""),
+            aes(label = star), position = pos,
+            vjust = -2, show.legend = FALSE) +
   scale_color_manual(values = c('#454545', '#74AC00')) +
-  labs(x = NULL, y = "Partial effect") +
-  ggpubr::theme_pubclean() 
+  labs(color = '', y = NULL, x = "effect") +
+  ggpubr::theme_pubclean() + 
+  theme(legend.position = 'right', 
+        axis.line.x = element_line(size = 0.5))
 
 plot_lm_main_effects
 
@@ -1797,6 +1730,8 @@ compare_performance(m0_records, m1_records, m2_records, rank = TRUE)
 summary(m2_records)$call
 tab_model(m2_records)
 ```
+
+
 
 ### Number of users recording in the country, by year
 
@@ -2474,6 +2409,94 @@ print('Number of derived publications per year');performance::performance(m2_lit
 tab_model(m2_records, m2_users, m2_species, m2_p_research_grade, m2_literature)
 ```
 
+#### Plot
+
+```{r}
+#| label: mixed-model-plot
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+cumulative_numbers <- function(data_temporal, variable_name, plot=T) {
+  
+  cagr_df <- data_temporal %>%
+    select(country_name, has_node, year, !!sym(variable_name)) %>% 
+    arrange(country_name, year) %>%
+    group_by(country_name, has_node) %>%
+    summarise(
+      first_year = min(year),
+      last_year = max(year),
+      n_years = last_year - first_year,
+      first_val = (!!sym(variable_name))[year == first_year] + 1,
+      last_val  = (!!sym(variable_name))[year == last_year] + 1,
+      cagr_pct = ((last_val / first_val)^(1 / n_years) - 1) * 100,
+      .groups = "drop"
+    )
+
+  cagr_df$has_node <- factor(cagr_df$has_node, labels = c("0", "1"))
+
+  labels <- c(n_records_years = "number of records",
+              n_users_years = "number of users",
+              n_species_years = "number of species",
+              p_research_grade_years = "proportion of research grade records",
+              n_literature_years = "number of publications")
+  
+  y_label <- str_glue("Annual growth rate (%) of\n{labels[[variable_name]]}")
+  
+  letter_plot <- c(n_records_years = '(a)',
+                   n_users_years = '(b)',
+                   n_species_years = '(c)',
+                   p_research_grade_years = '(d)',
+                   n_literature_years = '(e)')
+  
+  # boxplot comparing node vs no-node
+  if(plot){
+    ggplot(cagr_df, aes(x = has_node, y = cagr_pct, fill = has_node)) +
+      geom_boxplot(notch = T, linewidth = 0, 
+                 median.color = "black",
+                 whisker.linewidth = 0.5,
+                 median.linewidth = 0.8,
+                 show.legend = F) +
+      scale_fill_manual(values = c('#454545', '#74AC00')) +
+      # geom_jitter(width = 0.1, alpha = 0.5, size = 2, show.legend = F) +  
+      ggsignif::geom_signif(comparisons = list(c("0", "1")),
+                            map_signif_level = TRUE,
+                            textsize = 5, vjust = 2) +
+      labs(x = NULL, y = y_label) +
+      ggpubr::theme_pubclean() + ggtitle(letter_plot[[variable_name]])
+    # theme(legend.position = "none")
+  } else { 
+    print(variable_name) 
+    print(wilcox.test(cagr_pct ~ has_node, data = cagr_df))
+    }
+}
+
+cumulative_numbers(data_temporal = data_temporal_records, 
+                   variable_name = 'n_records_years') +
+cumulative_numbers(data_temporal = data_temporal_users, 
+                   variable_name = 'n_users_years') +
+cumulative_numbers(data_temporal = data_temporal_species, 
+                   variable_name = 'n_species_years') +
+cumulative_numbers(data_temporal = data_temporal_p_research_grade, 
+                   variable_name = 'p_research_grade_years') +  
+cumulative_numbers(data_temporal = data_temporal_literature, 
+                   variable_name = 'n_literature_years') 
+
+
+cumulative_numbers(data_temporal = data_temporal_records, 
+                   variable_name = 'n_records_years', plot=F)
+cumulative_numbers(data_temporal = data_temporal_users, 
+                   variable_name = 'n_users_years', plot=F)
+cumulative_numbers(data_temporal = data_temporal_species, 
+                   variable_name = 'n_species_years', plot=F)
+cumulative_numbers(data_temporal = data_temporal_p_research_grade, 
+                   variable_name = 'p_research_grade_years', plot=F) 
+cumulative_numbers(data_temporal = data_temporal_literature, 
+                   variable_name = 'n_literature_years', plot=F) 
+
+```
+
 
 ## Before and after the node
 
@@ -2495,6 +2518,7 @@ data_before_after_records <- left_join(node_years,
             select(country_name, node_name, year, n_records_years)) %>% 
   mutate(years_since_node = year - node_year,
          post_node = ifelse(year >= node_year, 1,0)) %>% 
+  group_by(country_name) %>% 
   mutate(n_records_years = scale(log10(n_records_years+1))[,1])
 
 data_before_after_records %>% 
@@ -2513,26 +2537,6 @@ n_records_before_after <- lmer(n_records_years ~ years_since_node * post_node + 
 summary(n_records_before_after)$call
 performance::performance(n_records_before_after)
 tab_model(n_records_before_after)
-
-pred <- ggpredict(n_records_before_after, terms = c("years_since_node", "post_node"))
-
-# ggplot(data_before_after_records, 
-#        aes(x = years_since_node, y = n_records_years, group = country_name)) +
-#   geom_line(alpha = 0.5, color = "grey50") +
-#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
-#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
-#   geom_vline(xintercept = 0, linetype = "dashed") +
-#   labs(x = "Years since node establishment", y = "Number of records") +
-#   theme_minimal()
-
-ggplot(data_before_after_records, aes(x = years_since_node, y = n_records_years)) +
-  geom_line(col='#74AC00') +
-  geom_point(col='#74AC00') +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
-  facet_wrap(~ country_name, scales = "fixed") +
-  labs(x = "Years since node establishment", y = "Number of records") +
-  theme_minimal()
 ```
 
 ### Number of users
@@ -2549,6 +2553,7 @@ data_before_after_users <- left_join(node_years,
             select(country_name, node_name, year, n_users_years)) %>% 
   mutate(years_since_node = year - node_year,
          post_node = ifelse(year >= node_year, 1,0)) %>% 
+  group_by(country_name) %>% 
   mutate(n_users_years = scale(log10(n_users_years+1))[,1])
 
 data_before_after_users %>% 
@@ -2567,26 +2572,6 @@ n_users_before_after <- lmer(n_users_years ~ years_since_node * post_node + (1 +
 summary(n_users_before_after)$call
 performance::performance(n_users_before_after)
 tab_model(n_users_before_after)
-
-pred <- ggpredict(n_users_before_after, terms = c("years_since_node", "post_node"))
-
-# ggplot(data_before_after_users, 
-#        aes(x = years_since_node, y = n_users_years, group = country_name)) +
-#   geom_line(alpha = 0.5, color = "grey50") +
-#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
-#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
-#   geom_vline(xintercept = 0, linetype = "dashed") +
-#   labs(x = "Years since node establishment", y = "Number of users") +
-#   theme_minimal()
-
-ggplot(data_before_after_users, aes(x = years_since_node, y = n_users_years)) +
-  geom_line(col='#74AC00') +
-  geom_point(col='#74AC00') +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
-  facet_wrap(~ country_name, scales = "fixed") +
-  labs(x = "Years since node establishment", y = "Number of users") +
-  theme_minimal()
 ```
 
 
@@ -2604,6 +2589,7 @@ data_before_after_species <- left_join(node_years,
             select(country_name, node_name, year, n_species_years)) %>% 
   mutate(years_since_node = year - node_year,
          post_node = ifelse(year >= node_year, 1,0)) %>% 
+  group_by(country_name) %>% 
   mutate(n_species_years = scale(log10(n_species_years+1))[,1])
 
 data_before_after_species %>% 
@@ -2622,26 +2608,6 @@ n_species_before_after <- lmer(n_species_years ~ years_since_node * post_node + 
 summary(n_species_before_after)$call
 performance::performance(n_species_before_after)
 tab_model(n_species_before_after)
-
-pred <- ggpredict(n_species_before_after, terms = c("years_since_node", "post_node"))
-
-# ggplot(data_before_after_species, 
-#        aes(x = years_since_node, y = n_species_years, group = country_name)) +
-#   geom_line(alpha = 0.5, color = "grey50") +
-#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
-#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
-#   geom_vline(xintercept = 0, linetype = "dashed") +
-#   labs(x = "Years since node establishment", y = "Number of species") +
-#   theme_minimal()
-
-ggplot(data_before_after_species, aes(x = years_since_node, y = n_species_years)) +
-  geom_line(col='#74AC00') +
-  geom_point(col='#74AC00') +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
-  facet_wrap(~ country_name, scales = "fixed") +
-  labs(x = "Years since node establishment", y = "Number of species") +
-  theme_minimal()
 ```
 
 ### Proportion of research grade records
@@ -2658,6 +2624,7 @@ data_before_after_p_research_grade <- left_join(node_years,
             select(country_name, node_name, year, p_research_grade_years)) %>% 
   mutate(years_since_node = year - node_year,
          post_node = ifelse(year >= node_year, 1,0)) %>% 
+  group_by(country_name) %>% 
   mutate(p_research_grade_years = scale(log10(p_research_grade_years+1))[,1])
 
 data_before_after_species %>% 
@@ -2676,26 +2643,6 @@ p_research_grade_before_after <- lmer(p_research_grade_years ~ years_since_node 
 summary(p_research_grade_before_after)$call
 performance::performance(p_research_grade_before_after)
 tab_model(p_research_grade_before_after)
-
-pred <- ggpredict(p_research_grade_before_after, terms = c("years_since_node", "post_node"))
-
-# ggplot(data_before_after_species, 
-#        aes(x = years_since_node, y = p_research_grade_years, group = country_name)) +
-#   geom_line(alpha = 0.5, color = "grey50") +
-#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
-#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
-#   geom_vline(xintercept = 0, linetype = "dashed") +
-#   labs(x = "Years since node establishment", y = "Number of species") +
-#   theme_minimal()
-
-ggplot(data_before_after_p_research_grade, aes(x = years_since_node, y = p_research_grade_years)) +
-  geom_line(col='#74AC00') +
-  geom_point(col='#74AC00') +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
-  facet_wrap(~ country_name, scales = "fixed") +
-  labs(x = "Years since node establishment", y = "Proportion of research grade records") +
-  theme_minimal()
 ```
 
 ### Number of literature
@@ -2711,7 +2658,9 @@ data_before_after_literature <- left_join(node_years,
           data_temporal_literature %>%
             select(country_name, node_name, year, n_literature_years)) %>% 
   mutate(years_since_node = year - node_year,
-         post_node = ifelse(year >= node_year, 1,0)) 
+         post_node = ifelse(year >= node_year, 1,0)) %>% 
+  group_by(country_name) %>% 
+  mutate(n_literature_years = scale(log10(n_literature_years+1))[,1])
 
 data_before_after_literature %>% 
   filter(country_name=='Chile') %>% knitr::kable(digits = 3)
@@ -2729,30 +2678,9 @@ n_literature_before_after <- lmer(n_literature_years ~ years_since_node * post_n
 summary(n_literature_before_after)$call
 performance::performance(n_literature_before_after)
 tab_model(n_literature_before_after)
-
-pred <- ggpredict(n_literature_before_after, terms = c("years_since_node", "post_node"))
-
-# ggplot(data_before_after_literature, 
-#        aes(x = years_since_node, y = n_literature_years, group = country_name)) +
-#   geom_line(alpha = 0.5, color = "grey50") +
-#   geom_line(data = pred, aes(x = x, y = predicted, group = NULL), 
-#             color = "#74AC00", linewidth = 1, inherit.aes = FALSE) +
-#   geom_vline(xintercept = 0, linetype = "dashed") +
-#   labs(x = "Years since node establishment", y = "Number of literature") +
-#   theme_minimal()
-
-ggplot(data_before_after_literature, aes(x = years_since_node, y = n_literature_years)) +
-  geom_line(col='#74AC00') +
-  geom_point(col='#74AC00') +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
-  facet_wrap(~ country_name, scales = "fixed") +
-  labs(x = "Years since node establishment", y = "Number of literature") +
-  theme_minimal()
 ```
 
 ### All models 
-
 
 ```{r}
 #| label: before-and-after-all
@@ -2764,7 +2692,56 @@ ggplot(data_before_after_literature, aes(x = years_since_node, y = n_literature_
 tab_model(n_records_before_after, n_users_before_after, 
           n_species_before_after, p_research_grade_before_after,
           n_literature_before_after)
+```
 
+### Plots 
+
+```{r}
+#| label: before-and-after-plots
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+trajectories_plot <- function(data_before_after, variable_name) {
+  
+  labels <- c(n_records_years = "Number of records (standardised)",
+              n_users_years = "Number of users (standardised)",
+              n_species_years = "Number of species (standardised)",
+              p_research_grade_years = "Proportion of research grade records (standardised)",
+              n_literature_years = "Number of publications (standardised)")
+
+  # plot
+  ggplot(data_before_after,
+         aes(x = years_since_node, y = !!sym(variable_name))) +
+    geom_line(col='#74AC00') +
+    geom_point(col='#74AC00') +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey") +
+    facet_wrap(~ country_name, scales = "fixed", nrow = 3) +
+    labs(x = "Years since node establishment", y = labels[[variable_name]]) +
+    ggpubr::theme_pubclean() + 
+    theme(axis.line.x = element_line(size = 0.5), 
+          strip.background = element_rect(fill = "#454545"),
+          strip.text = element_text(color = "white"))
+}
+
+trajectories_plot(data_before_after = data_before_after_records, 
+                  variable_name = 'n_records_years')
+
+trajectories_plot(data_before_after = data_before_after_users, 
+                  variable_name = 'n_users_years')
+
+trajectories_plot(data_before_after = data_before_after_species, 
+                  variable_name = 'n_species_years')
+
+trajectories_plot(data_before_after = data_before_after_p_research_grade, 
+                  variable_name = 'p_research_grade_years')
+
+trajectories_plot(data_before_after = data_before_after_literature, 
+                  variable_name = 'n_literature_years')
+
+# save 1000 x 600
 ```
 
 
